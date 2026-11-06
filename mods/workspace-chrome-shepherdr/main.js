@@ -43,7 +43,7 @@ export default class WorkspaceChrome extends View {
         // (mods/shepherdr-settings) under Shepherdr's mark, the crook.
         .child(row("settings", "settings", "Settings", () => run("app.settings"))
           .when(Boolean(updates().app.ready), el => el.child(div().size(6).rounded_full().bg(t.accent))))
-        .child(row("shepherdr", "crook", "Shepherdr", () => openSettings()))
+        .child(row("shepherdr", "crook", "BossGoat", () => openSettings()))
         .child(row("machine", "plus", "Add machine", () => run("mod.open", { name: "machine-add-chat" })));
     }
     return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 14).pr(10).gap(4).items_center().text_size(13.5)

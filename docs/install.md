@@ -1,13 +1,13 @@
 # Install
 
-Shepherdr 3.1.14 is a layout for the Herdr app plus its mods, helpers and role instructions, and a web app for your tailnet ([Web](web.md)). One script puts them in
+BossGoat 3.1.14 is a layout for the Herdr app plus its mods, helpers and role instructions, and a web app for your tailnet ([Web](web.md)). One script puts them in
 place, never overwrites what you made yourself, and keeps a backup of anything it replaces.
 
 ## Requirements
 
 - macOS or Linux, the Herdr app 0.1.12 or newer (`herdr-app --version`) with herdr-core 0.1.17 or newer
   (`hc --version`). Open Herdr once first, so it writes its home (`~/.config/herdr-app`).
-- python3 3.8 or newer, git, and Claude Code or Codex, installed and signed in.
+- python3 3.8 or newer, git, and Claude Code, Codex or Cursor, installed and signed in.
 - bun (the service and the web app; the installer installs it from bun.sh when it's missing), and Tailscale for the
   web app.
 - Optional, per add-on: `gh` (pull requests), agent-browser 0.41.1, node and Chrome (the task browser), bun,
@@ -17,13 +17,13 @@ place, never overwrites what you made yourself, and keeps a backup of anything i
 ## Install
 
 ```bash
-git clone https://github.com/eliasstravik/shepherdr && cd shepherdr
+git clone https://github.com/NeuralHerd/BossGoat && cd BossGoat
 ./install.sh --dry-run      # what it would do; nothing is written
 ./install.sh                # do it
 shepherdr doctor            # check it
 ```
 
-Then in Herdr, `Ctrl+Shift+L` picks the Shepherdr layout.
+Then in Herdr, `Ctrl+Shift+L` picks the `shepherdr` layout (BossGoat keeps this key for existing settings).
 
 A fresh clone has no web app built (`web/dist` isn't in git): the installer builds it with Bun (`bun install`,
 `bun run build`) whenever it's missing or older than its sources, so nothing to do by hand. A build that fails stops
@@ -57,7 +57,7 @@ herdr-core and the web app alone: no Herdr app, its spaces are the service's own
 (https://herdr.dev) and Tailscale, signed in, then:
 
 ```bash
-git clone https://github.com/eliasstravik/shepherdr && cd shepherdr
+git clone https://github.com/NeuralHerd/BossGoat && cd BossGoat
 ./install.sh --web          # the service, the web app, herdr-task and the helpers
 shepherdr doctor            # check it
 shepherdr web status        # where it's served: https://<this machine's tailnet name>/shepherdr/

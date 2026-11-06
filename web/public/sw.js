@@ -28,7 +28,7 @@ self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()))
 
 self.addEventListener('push', (e) => {
-  const a = e.data ? e.data.json() : { title: 'Shepherdr', body: '' }
+  const a = e.data ? e.data.json() : { title: 'BossGoat', body: '' }
   e.waitUntil(
     Promise.all([badge(a.badge), tidy(a.open)])
       .catch(() => undefined)
