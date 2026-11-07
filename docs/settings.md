@@ -142,7 +142,8 @@ or drop one onto the preview. Images up to 30 MB and 60 megapixels are accepted 
 locally, with a maximum edge of 4096 pixels. The original image stays untouched.
 
 The picture fills the conversation area without stretching. **Transparency** ranges from 0% (fully visible)
-to 100% (hidden), while messages and controls keep light surfaces. Transparency applies only to images. Changes save automatically.
+to 100% (hidden), while messages keep light surfaces. Transparency applies only to images. Changes save automatically.
+The message box follows Herdr’s native light or dark theme so its typing cursor stays visible, regardless of the background.
 **Reset to default** restores `bossgoat-background.png` and its default transparency. Other Herdr layouts, terminal panes and the web app
 keep their existing appearance.
 
