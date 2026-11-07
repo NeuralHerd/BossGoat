@@ -128,7 +128,7 @@ then the space's own), without guessing (`herdr_task/assistant_settings.py`):
 
 ## BossGoat desktop wallpaper
 
-BossGoat includes `Warp_bg.png` as its default background, so a new installation needs no file
+BossGoat includes `bossgoat-background.png` as its default background, so a new installation needs no file
 selection or download. Existing custom images remain selected. The default transparency is 0% (fully visible).
 
 In the desktop sidebar, open **BossGoat → Appearance**. Choose a PNG, JPEG or WebP image,
@@ -137,7 +137,7 @@ locally, with a maximum edge of 4096 pixels. The original image stays untouched.
 
 The picture fills the conversation area without stretching. **Transparency** ranges from 0% (fully visible)
 to 100% (hidden), while messages and controls keep light surfaces. Changes save automatically.
-**Reset to default** restores `Warp_bg.png` and its default transparency. Other Herdr layouts, terminal panes and the web app
+**Reset to default** restores `bossgoat-background.png` and its default transparency. Other Herdr layouts, terminal panes and the web app
 keep their existing appearance.
 
 This preference belongs to this computer, not a space or an agent. It is stored in Herdr’s local

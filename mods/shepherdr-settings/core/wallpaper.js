@@ -2,8 +2,8 @@
 export const WALLPAPER_KEY = "bossgoat.wallpaper";
 export const WALLPAPER_DIR = "data/bossgoat-wallpaper";
 export const DEFAULT_TRANSPARENCY = 0;
-export const DEFAULT_WALLPAPER = { path: "mods/chat/Warp_bg.png", width: 1588, height: 991,
-  transparency: DEFAULT_TRANSPARENCY, name: "Warp_bg.png" };
+export const DEFAULT_WALLPAPER = { path: "mods/chat/bossgoat-background.png", width: 1588, height: 991,
+  transparency: DEFAULT_TRANSPARENCY, name: "bossgoat-background.png" };
 export const APPEARANCE = { id: "appearance", title: "Appearance", icon: "image" };
 export const WALLPAPER = {
   title: "Wallpaper", scope: "BossGoat on this computer.",
@@ -17,6 +17,7 @@ export const WALLPAPER = {
 export function wallpaper(value, layout = "BossGoat") {
   if (layout !== "BossGoat") return null;
   if (value == null) return { ...DEFAULT_WALLPAPER };
+  if (value.path === "mods/chat/Warp_bg.png") value = { ...value, path: DEFAULT_WALLPAPER.path, name: DEFAULT_WALLPAPER.name };
   if (value.path === DEFAULT_WALLPAPER.path) value = { ...DEFAULT_WALLPAPER, ...value };
   else if (!new RegExp(`^${WALLPAPER_DIR}/[a-f0-9]{64}\\.png$`).test(value.path)) return null;
   if (![value.width, value.height].every((n) => Number.isInteger(n) && n > 0 && n <= 4096)) return null;

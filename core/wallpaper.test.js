@@ -42,6 +42,8 @@ test("cover fills a resized workspace without stretching the photo", () => {
 test("fresh installations and reset use the bundled image without a local file selection", () => {
   expect(wallpaper()).toEqual(DEFAULT_WALLPAPER);
   expect(wallpaper(null)).toEqual(DEFAULT_WALLPAPER);
+  expect(wallpaper({ ...DEFAULT_WALLPAPER, path: "mods/chat/Warp_bg.png", name: "Warp_bg.png", transparency: 45 }))
+    .toEqual({ ...DEFAULT_WALLPAPER, transparency: 45 });
   expect(wallpaper({ path: DEFAULT_WALLPAPER.path, transparency: 100 }).transparency).toBe(100);
   const image = readFileSync(new URL(`../${DEFAULT_WALLPAPER.path}`, import.meta.url));
   expect(image.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
