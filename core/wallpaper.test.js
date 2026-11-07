@@ -1,13 +1,14 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
-import { wallpaper, cover, DEFAULT_FADE, WALLPAPER_DIR } from "./wallpaper.js";
+import { wallpaper, cover, DEFAULT_TRANSPARENCY, DEFAULT_WALLPAPER, WALLPAPER_DIR } from "./wallpaper.js";
 
-const chosen = { path: `${WALLPAPER_DIR}/${"a".repeat(64)}.png`, width: 1920, height: 1080, name: "A picture.png", fade: 60 };
+const chosen = { path: `${WALLPAPER_DIR}/${"a".repeat(64)}.png`, width: 1920, height: 1080, name: "A picture.png", transparency: 60 };
 
 test("a saved image is shown only in BossGoat, including after switching away and back", () => {
   expect(wallpaper(chosen, "BossGoat")).toEqual(chosen);
   for (const layout of ["main", "terminals", "shepherdr", "BossGoat-copy", null]) expect(wallpaper(chosen, layout)).toBeNull();
   expect(wallpaper(chosen, "BossGoat")).toEqual(chosen);
-  expect(wallpaper(null)).toBeNull();
+  expect(wallpaper(undefined, "terminals")).toBeNull();
 });
 
 test("preferences cannot load remote URLs, arbitrary files or invalid image dimensions", () => {
@@ -17,11 +18,11 @@ test("preferences cannot load remote URLs, arbitrary files or invalid image dime
   expect(wallpaper({ ...chosen, height: 0 })).toBeNull();
 });
 
-test("missing and invalid fade values remain usable, and transparency stays bounded", () => {
-  expect(wallpaper({ ...chosen, fade: undefined }).fade).toBe(DEFAULT_FADE);
-  expect(wallpaper({ ...chosen, fade: NaN }).fade).toBe(DEFAULT_FADE);
-  expect(wallpaper({ ...chosen, fade: -50 }).fade).toBe(0);
-  expect(wallpaper({ ...chosen, fade: 200 }).fade).toBe(95);
+test("missing and invalid transparency values remain usable, and transparency stays bounded", () => {
+  expect(wallpaper({ ...chosen, transparency: undefined }).transparency).toBe(DEFAULT_TRANSPARENCY);
+  expect(wallpaper({ ...chosen, transparency: NaN }).transparency).toBe(DEFAULT_TRANSPARENCY);
+  expect(wallpaper({ ...chosen, transparency: -50 }).transparency).toBe(0);
+  expect(wallpaper({ ...chosen, transparency: 200 }).transparency).toBe(100);
 });
 
 test("cover fills a resized workspace without stretching the photo", () => {
@@ -35,4 +36,22 @@ test("cover fills a resized workspace without stretching the photo", () => {
   }
   expect(cover(chosen, 0, 100)).toBeNull();
   expect(cover(chosen, 100, NaN)).toBeNull();
+});
+
+
+test("fresh installations and reset use the bundled image without a local file selection", () => {
+  expect(wallpaper()).toEqual(DEFAULT_WALLPAPER);
+  expect(wallpaper(null)).toEqual(DEFAULT_WALLPAPER);
+  expect(wallpaper({ path: DEFAULT_WALLPAPER.path, transparency: 100 }).transparency).toBe(100);
+  const image = readFileSync(new URL(`../${DEFAULT_WALLPAPER.path}`, import.meta.url));
+  expect(image.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+  expect(image.readUInt32BE(16)).toBe(DEFAULT_WALLPAPER.width);
+  expect(image.readUInt32BE(20)).toBe(DEFAULT_WALLPAPER.height);
+});
+
+test("existing custom images and Fade settings keep their appearance", () => {
+  const { transparency, ...legacy } = chosen;
+  expect(wallpaper({ ...legacy, fade: transparency })).toEqual(chosen);
+  expect(wallpaper({ ...chosen, fade: 15 })).toEqual(chosen);
+  expect(wallpaper({ ...chosen, transparency: 0, fade: 75 }).transparency).toBe(0);
 });

@@ -121,6 +121,9 @@ class Install(unittest.TestCase):
         self.assertTrue(os.path.isfile(self.p(APP, "layouts/BossGoat.json")))
         layout = json.load(open(self.p(APP, "layouts/BossGoat.json")))
         self.assertTrue(os.path.isfile(self.p(APP, layout["preview"])))
+        self.assertEqual(Path(self.p(APP, "mods/chat/Warp_bg.png")).read_bytes(),
+                         (Path(ROOT) / "mods/chat/Warp_bg.png").read_bytes(),
+                         "new installations must include the default wallpaper without downloading it")
         self.assertEqual(os.path.realpath(self.p(".local/bin/herdr-task")), os.path.realpath(self.p(APP, "mods/tasks/bin/herdr-task")))
         # A key the person uses is kept (no terminal to ask in); free ones are added.
         keys = json.load(open(self.p(APP, "keys.json")))
