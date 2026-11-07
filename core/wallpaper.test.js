@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
-import { wallpaper, cover, DEFAULT_TRANSPARENCY, DEFAULT_WALLPAPER, WALLPAPER_DIR } from "./wallpaper.js";
+import { wallpaper, cover, DEFAULT_TRANSPARENCY, DEFAULT_WALLPAPER, WALLPAPER_DIR, SOLID_BACKGROUNDS, wallpaperColors } from "./wallpaper.js";
 
 const chosen = { path: `${WALLPAPER_DIR}/${"a".repeat(64)}.png`, width: 1920, height: 1080, name: "A picture.png", transparency: 60 };
 
@@ -56,4 +56,37 @@ test("existing custom images and Fade settings keep their appearance", () => {
   expect(wallpaper({ ...legacy, fade: transparency })).toEqual(chosen);
   expect(wallpaper({ ...chosen, fade: 15 })).toEqual(chosen);
   expect(wallpaper({ ...chosen, transparency: 0, fade: 75 }).transparency).toBe(0);
+});
+
+
+test("solid presets render without an image and stay limited to BossGoat", () => {
+  for (const preset of SOLID_BACKGROUNDS) {
+    const saved = { kind: "solid", preset: preset.id, path: chosen.path, color: "#ff00ff" };
+    const selected = wallpaper(saved);
+    expect(selected.color).toBe(preset.color);
+    expect(selected.path).toBeUndefined();
+    expect(selected.transparency).toBeUndefined();
+    expect(cover(selected, 800, 600)).toBeNull();
+    expect(wallpaper(saved, "terminals")).toBeNull();
+  }
+  expect(wallpaper({ kind: "solid", preset: "unknown" })).toBeNull();
+});
+
+test("light and dark presets keep ordinary chat text readable", () => {
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const luminance = (rgb) => rgb.map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+    .reduce((total, c, i) => total + c * [0.2126, 0.7152, 0.0722][i], 0);
+  for (const preset of SOLID_BACKGROUNDS) {
+    const selected = wallpaper({ kind: "solid", preset: preset.id });
+    const colors = wallpaperColors(selected);
+    for (const surface of [colors.surface, colors.background]) {
+      for (const text of [colors.foreground, colors.muted]) {
+        const alpha = text.length === 9 ? parseInt(text.slice(7), 16) / 255 : 1;
+        const back = rgb(surface), front = rgb(text).map((c, i) => c * alpha + back[i] * (1 - alpha));
+        const levels = [luminance(front), luminance(back)].sort((a, b) => b - a);
+        expect((levels[0] + 0.05) / (levels[1] + 0.05)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  }
+  expect(wallpaperColors(DEFAULT_WALLPAPER).surface).toBe("#ffffff");
 });

@@ -1685,9 +1685,9 @@ export default class Chat extends View {
   fresh(t) {
     const starting = this.phase === "starting";
     return v_flex().flex_1().min_h(0).items_center().justify_center().px(24).gap(6)
-      .child(div().text_size(TEXT.title).font_medium().text_color(t.foreground).when(t.wallpaper, (el) => el.bg("#ffffff").px(10).py(5).rounded(8)).child(starting ? WORDS.startingAssistant : WORDS.emptyTitle))
+      .child(div().text_size(TEXT.title).font_medium().text_color(t.foreground).when(t.wallpaper, (el) => el.bg(t.surface).px(10).py(5).rounded(8)).child(starting ? WORDS.startingAssistant : WORDS.emptyTitle))
       .child(div().max_w(380).text_center().text_size(TEXT.label).text_color(t.dim)
-        .when(t.wallpaper, (el) => el.bg("#ffffff").px(10).py(5).rounded(8)).child(WORDS.emptyBody));
+        .when(t.wallpaper, (el) => el.bg(t.surface).px(10).py(5).rounded(8)).child(WORDS.emptyBody));
   }
 
   // ---- find (Ctrl+F) ----------------------------------------------------------------------------
@@ -3019,7 +3019,7 @@ export default class Chat extends View {
     // A readable column, centered when the pane is wide.
     // At a block's edge a row drops its outer room there: spaced() puts the gap between blocks.
     const col = (el, px = 18, py = 6) => h_flex().w_full().justify_center()
-      .child(div().w_full().max_w(COLUMN + 2 * px).when(t.wallpaper, (el) => el.bg("#ffffff").rounded(8)).px(px).pt(x.top0 ? 0 : py).pb(x.bot0 ? 0 : py).child(el));
+      .child(div().w_full().max_w(COLUMN + 2 * px).when(t.wallpaper, (el) => el.bg(t.surface).rounded(8)).px(px).pt(x.top0 ? 0 : py).pb(x.bot0 ? 0 : py).child(el));
     const pad = (el) => col(el, 18, 7);
     // The person's words on the right in an accent tint; the agent's on the left, quieter.
     const most = Math.max(240, Math.floor(Math.min(this.width, COLUMN) * 0.8));
