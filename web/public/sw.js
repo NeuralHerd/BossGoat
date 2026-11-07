@@ -44,8 +44,8 @@ self.addEventListener('push', (e) => {
           tag,
           // a task's newer alert buzzes again, though it takes the old one's place
           renotify: !!tag,
-          icon: 'icon-192.png?v=2',
-          badge: 'badge-96.png?v=2',
+          icon: 'icon-192.png?v=3',
+          badge: 'badge-96.png?v=3',
           data: { url: a.url || './', waits: !!a.waits, answer: a.answer },
         }
         if (a.answer && a.actions && buttons()) options.actions = a.actions.slice(0, Notification.maxActions)
