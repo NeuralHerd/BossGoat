@@ -23,7 +23,24 @@ git clone https://github.com/NeuralHerd/BossGoat && cd BossGoat
 shepherdr doctor            # check it
 ```
 
-Then in Herdr, `Ctrl+Shift+L` picks the `shepherdr` layout (BossGoat keeps this key for existing settings).
+Then in Herdr, `Ctrl+Shift+L` picks the `BossGoat` layout.
+
+### Upgrading an existing Shepherdr layout
+
+Before installing this version, copy the layout through the running Herdr app so pane sizes,
+theme choices and other saved preferences carry over:
+
+```bash
+herdr-app do layout.clone '{"name":"shepherdr","as":"BossGoat"}'
+./install.sh --adopt --keys keep
+shepherdr doctor
+```
+
+Skip the copy if `BossGoat` already exists. The installer backs up the clone before installing
+its layout and preview; it never edits `layouts/.state/`. Existing BossGoat shortcuts take
+priority, and missing shortcuts are copied from the old layout once. The old shortcut section
+stays available for custom layouts. An unchanged old layout is backed up and removed; a layout
+you customized is retained. Tasks, chats and agent settings keep their existing storage paths.
 
 A fresh clone has no web app built (`web/dist` isn't in git): the installer builds it with Bun (`bun install`,
 `bun run build`) whenever it's missing or older than its sources, so nothing to do by hand. A build that fails stops
@@ -33,7 +50,7 @@ What goes where:
 
 | What | Where |
 |---|---|
-| The layout | `~/.config/herdr-app/layouts/shepherdr.json` |
+| The layout | `~/.config/herdr-app/layouts/BossGoat.json` |
 | 29 mods (the add-ons, [Add-ons](addons.md)) | `~/.config/herdr-app/mods/<name>/`, one swap per mod so Herdr reloads each once |
 | Shared modules, helpers | `~/.config/herdr-app/lib/`, `~/.config/herdr-app/bin/` |
 | Keys | merged into `~/.config/herdr-app/keys.json`: free keys added; a key you already use is asked about (kept without a terminal; `--keys ours` takes Shepherdr's) |

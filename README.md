@@ -55,12 +55,12 @@ An agent that asks you something, wants a permission or a plan approved shows un
 <table>
 <tr>
 <td align="center" valign="top" width="33%"><h3>1️⃣</h3><b>Install it into Herdr</b><br /><sub>With the Herdr app opened once, clone this repo and run <code>./install.sh --dry-run</code> to see what it does, then <code>./install.sh</code>. <code>./install.sh --web</code> installs the web app alone.</sub></td>
-<td align="center" valign="top" width="33%"><h3>2️⃣</h3><b>Check it and switch to it</b><br /><sub>Run <code>shepherdr doctor</code>. In Herdr, <code>Ctrl+Shift+L</code> picks the <code>shepherdr</code> layout (BossGoat).</sub></td>
+<td align="center" valign="top" width="33%"><h3>2️⃣</h3><b>Check it and switch to it</b><br /><sub>Run <code>shepherdr doctor</code>. In Herdr, <code>Ctrl+Shift+L</code> picks the <code>BossGoat</code> layout.</sub></td>
 <td align="center" valign="top" width="33%"><h3>3️⃣</h3><b>Write to an Assistant</b><br /><sub>Make a space for a folder (<code>Ctrl+Shift+N</code>) and say what needs doing. <code>Ctrl+K</code> jumps anywhere and <code>Ctrl+Shift+?</code> shows every key.</sub></td>
 </tr>
 </table>
 
-[The docs](docs/) cover installation and development. BossGoat keeps the `shepherdr` command, layout key and storage paths for compatibility; the original [Shepherdr](https://github.com/eliasstravik/shepherdr) history and license are retained.
+[The docs](docs/) cover installation and development. BossGoat keeps the `shepherdr` command and storage paths for compatibility; the original [Shepherdr](https://github.com/eliasstravik/shepherdr) history and license are retained.
 
 ## Get everything included, free
 
