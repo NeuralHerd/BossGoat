@@ -28,6 +28,7 @@ from .store import is_task_list, locate, open_store, prefixes_in_use, read_list,
 from .queues import after_refs, parse_after, queue_reason, set_after
 from .archive import unarchive
 from .output import line, minutes, say, view
+from .holycow import require_assignment
 from .scheduler import ensure_scheduler
 from .proof import evidence, find_proof
 from .when import when_from
@@ -109,6 +110,7 @@ def cmd_add(args):
         if args.after:
             set_after(s, t, *parse_after(s, args.after))
         if at:
+            require_assignment(t)
             # Started later by the scheduler, with no caller to ask: its space is kept now.
             schedule(s, t, at, {"space": space or default_space()})
         v = view(s, t)
@@ -278,6 +280,7 @@ def cmd_start(args):
             raise Fail(f"{s.ref(t)} is already running ({live[0]['address']}). Use switch or resume.")
         if t["state"] == "done":
             raise Fail(f"{s.ref(t)} is done. Reopen it first.")
+        require_assignment(t)
         if args.here:
             t["mode"] = "here"
         elif args.worktree and worktrees_on(s):
@@ -738,9 +741,9 @@ def cmd_edit(args):
         if args.prompt_file:
             with open(args.prompt_file) as f:
                 t["prompt"] = f.read()
-        pick = [t.get(k) for k in ("skill", "agent", "model", "effort")]
+        pick = [t.get(k) for k in ("kind", "skill", "agent", "model", "effort")]
         set_opts(t, args)
-        if [t.get(k) for k in ("skill", "agent", "model", "effort")] != pick:
+        if [t.get(k) for k in ("kind", "skill", "agent", "model", "effort")] != pick:
             # The next agent started for it runs on the new choice (start_again), a queued one too.
             t["pick_at"] = now()
             q = t.get("queue") or {}
@@ -751,6 +754,8 @@ def cmd_edit(args):
         if args.after is not None:
             set_after(s, t, *parse_after(s, args.after))
         at = scheduled_at(args) if (args.at or "").strip() or args.in_ is not None else None
+        if at or t["state"] in ("queued", "scheduled"):
+            require_assignment(t)
         if at:
             schedule(s, t, at)
         elif args.at is not None:
@@ -814,6 +819,7 @@ def last_agent(t):
 def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None):
     """Starts an agent for the task: the last agent's own session when it's the same kind of agent
     and the session is known; else a fresh one with a handoff. `message` goes after either."""
+    require_assignment(t)
     unarchive(s, t)
     prev = last_agent(t)
     parent = parent_for(parent or (prev or {}).get("parent"), space)

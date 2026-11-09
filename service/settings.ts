@@ -228,9 +228,7 @@ export class Settings {
 
   private holycow(s: Scope | null): SettingSection {
     const scope = s?.id ?? null;
-    const enabled = this.pick(scope, "holycow", "enabled");
-    const rows: SettingRow[] = [{ label: HOLYCOW.enabled, key: "holycow.enabled", value: ON(enabled.value === true),
-      options: ["on", "off"], hint: HOLYCOW.about, ...this.follows(s, enabled, (v) => ON(v === true), "holycow", "enabled") }];
+    const rows: SettingRow[] = [{ label: HOLYCOW.policyTitle, key: "", value: HOLYCOW.policy, fixed: true, hint: HOLYCOW.about }];
     const worker = this.pick(scope, "worker", null).value?.agent;
     for (const r of HOLYCOW.skills) {
       const p = this.pick(scope, "holycow", r.id);
@@ -454,8 +452,7 @@ export class Settings {
     } else if (section === "tasks" && /^(start|finish)_notes$/.test(field)) {
       put("tasks", field, word === null ? null : word.slice(0, 8000));
     } else if (key === "holycow.enabled") {
-      if (word !== null && word !== "on" && word !== "off") throw new Error("Not one of its choices.");
-      put("holycow", "enabled", word === null ? null : word === "on");
+      throw new Error("HolyCow skill assignment is required for software tasks and cannot be switched off.");
     } else if ((section === "role" && ROLES.some((r) => r.id === field)) ||
                (section === "holycow" && HOLYCOW.skills.some((r: any) => r.id === field))) {
       // a role's agent: { agent, model, effort, fast } as the window's model button keeps it

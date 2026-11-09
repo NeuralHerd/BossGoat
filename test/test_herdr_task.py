@@ -1867,7 +1867,7 @@ class Scheduled(unittest.TestCase):
         return json.loads(out.getvalue())
 
     def add(self, title, **kw):
-        return self.run_cmd(self.commands.cmd_add, title=title, **kw)
+        return self.run_cmd(self.commands.cmd_add, title=title, **{"skill": "hc-build", **kw})
 
     def tick_at(self, ms):
         """One tick at that moment, the list read fresh from disk (as after a restart)."""
@@ -1880,6 +1880,18 @@ class Scheduled(unittest.TestCase):
     def task(self, n):
         with self.store_mod.Store(self.store_mod.locate(self.folder), write=False) as s:
             return dict(s.find(n))
+
+    def test_unassigned_drafts_wait_and_failed_scheduling_keeps_the_store_unchanged(self):
+        v = self.add("Draft", skill=None)
+        self.assertEqual(v["state"], "todo")
+        with self.assertRaisesRegex(self.Fail, "require a HolyCow skill"):
+            self.run_cmd(self.commands.cmd_start, id=v["ref"], at="tomorrow 9:00", argv='["claude"]')
+        self.assertEqual(self.task(v["id"])["state"], "todo")
+        with self.assertRaisesRegex(self.Fail, "require a HolyCow skill"):
+            self.add("Unassigned scheduled task", skill=None, in_="6h")
+        with self.store_mod.Store(self.store_mod.locate(self.folder), write=False) as st:
+            self.assertEqual(len(st.data["tasks"]), 1)
+        self.assertEqual(self.started, [])
 
     def test_parsing_absolute_relative_and_refused(self):
         import datetime
@@ -2361,7 +2373,7 @@ class AutomationFromAnotherMachine(unittest.TestCase):
     def auto(self, sub, **kw):
         args = self.argparse.Namespace(auto=sub, folder=self.a_folder, json=True, id=None, title=None, prompt=None,
                                        prompt_file=None, every=None, on=None, match=None, agent=None, space=None,
-                                       parent=None, here=False, worktree=False, from_=None)
+                                       parent=None, here=False, worktree=False, from_=None, skill="hc-build")
         for k, v in kw.items():
             setattr(args, k, v)
         out = self.io.StringIO()

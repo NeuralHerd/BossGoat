@@ -69,8 +69,8 @@ export const ROLES = [
     told: "What every reviewer is told first" },
 ];
 export const HOLYCOW = {
-  title: "HolyCow Agents", enabled: "Use HolyCow",
-  about: "The Assistant chooses the relevant skill for software work. Each skill task uses the model below. Install HolyCow skills on each machine first. Changes apply to new launches.",
+  title: "HolyCow Agents", policyTitle: "Skill assignment", policy: "Required for software tasks",
+  about: "The Assistant assigns a HolyCow skill before software work starts. Unassigned tasks wait for a skill. Each skill uses the model below; install its instructions on every machine that runs it.",
   instructions: "Role instructions still govern tasks and reviews. HolyCow adds the installed skill's instructions and references; it does not replace those rules.",
   follow: "Use role model",
   skills: [
@@ -373,7 +373,7 @@ export const ROUNDS = [[0, "Off"], [1, "1 round"], [2, "2 rounds"], [3, "3 round
 export const ARCHIVE = [[0, "Off"], [1, "1 day"], [3, "3 days"], [7, "1 week"], [30, "1 month"]];
 export const ONOFF = [[true, "On"], [false, "Off"]];
 
-export const DEFAULTS = { holycow: { enabled: false }, tasks: { merge: "ask", review_rounds: 0, must_fix: "major", max_running: 10, worktrees: true, archive_after: 7, proof: true }, automations: { enabled: true },
+export const DEFAULTS = { holycow: {}, tasks: { merge: "ask", review_rounds: 0, must_fix: "major", max_running: 10, worktrees: true, archive_after: 7, proof: true }, automations: { enabled: true },
   agents: { reactions: true, feedback: true, feedback_repo: "" } };
 
 // [section, field, label, choices | { min, max }]

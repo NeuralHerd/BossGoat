@@ -18,7 +18,7 @@ import time
 from .base import ENTRY, Fail, git, hc_json, now, run, WORKTREES
 from .settings import agent_key, ASSISTANT_TEMPLATES, bare, BRANCH_PATTERN, branch_pattern_problem, notes, notes_part, review_limits, settings_block, settings_for
 from .templates import instructions
-from .holycow import skill_note
+from .holycow import skill_note, require_assignment
 from .agents import detail, LINE_MAX, live_agents, SUMMARY_MAX
 from .github import finish, remote_of
 from .browsers import browser_line, browser_path
@@ -404,6 +404,7 @@ def where_line(task):
 
 
 def holycow_brief(s, task, space=None, argv=None):
+    require_assignment(task)
     if not task.get("skill"):
         return ""
     from .settings import worker_argv, task_settings
@@ -601,6 +602,9 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     herdr.space, which Herdr gives a pane), herdr.agent, herdr.coordinator (its coordinator's tab,
     which keeps it under a restarted coordinator) and herdr.role=reviewer for a reviewer, kept
     apart from the task's agents. Returns its record."""
+    skill_instructions = holycow_brief(s, task, space, argv)
+    if resume and skill_instructions:
+        message = skill_instructions + ("\n\n" + message if message else "")
     key = s.key(task)
     cmd = list(resume or argv)
     if not role:

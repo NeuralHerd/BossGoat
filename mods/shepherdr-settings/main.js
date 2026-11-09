@@ -511,9 +511,8 @@ export default class ShepherdrSettings extends View {
     }
     return v_flex()
       .child(this.title(t, HOLYCOW.title))
-      .child(this.row(t, HOLYCOW.enabled, HOLYCOW.about,
-        toggleSwitch("holycow-enabled", shepherdrFor(this.cfg, this.scope).holycow.enabled === true,
-          (next, _e, cx) => this.set("holycow", "enabled", next, cx)), this.scoped("holycow", "enabled")))
+      .child(this.row(t, HOLYCOW.policyTitle, HOLYCOW.about,
+        div().text_size(TEXT.label).text_color(t.muted).child(HOLYCOW.policy)))
       .children(HOLYCOW.skills.map((r) => {
         const c = this.skills[r.id];
         const control = h_flex().gap(8).items_center()
