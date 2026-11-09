@@ -1074,7 +1074,7 @@ export default class Chat extends View {
     const pane = this.lastPane ?? (this.slot && this.slotRec()?.pane) ?? null;
     if (!this.thread && !this.inner && !this.swapping && !t.labels?.["herdr.chat"] && pane && !panes().some((p) => p.terminal === this.addr)
       && panes().some((p) => p.pane === pane && p.mod === "chat")) await hc(["label", this.addr, `herdr.chat=${pane}`]);
-    const kind = KINDS[t.status?.app] ?? KINDS[t.foreground?.name];
+    const kind = cliOf(t);
     // Back at its shell because the session it resumed is gone: a new agent starts there.
     if (!kind) { if (!(await this.checkLost(this.addr, cx, t))) this.set("unsupported", cx); return; }
     this.t = t;
@@ -2734,11 +2734,13 @@ export default class Chat extends View {
 
   // A full-size message instead of the conversation: finding it, not found, ended.
   notice(t, title, body, actions = []) {
-    return v_flex().flex_1().min_h(0).items_center().justify_center().px(24).gap(6)
+    return v_flex().flex_1().min_h(0).items_center().justify_center().px(24)
+      .child(v_flex().items_center().gap(6).px(18).py(14).rounded(12)
+      .when(t.wallpaper, (el) => el.bg(t.surface))
       .child(svg("mods/workspace-chrome/terminal.svg").size(18).flex_none().text_color(t.dim))
       .child(div().pt(4).font_medium().text_color(t.foreground).child(title))
       .when(Boolean(body), (el) => el.child(div().max_w(360).text_center().text_size(12.5).text_color(t.muted).child(body)))
-      .when(actions.length > 0, (el) => el.child(h_flex().pt(8).gap(6).children(actions)));
+      .when(actions.length > 0, (el) => el.child(h_flex().pt(8).gap(6).children(actions))));
   }
 
   // ---- the conversation's rows ----------------------------------------------------------------
@@ -3364,6 +3366,7 @@ export default class Chat extends View {
     // The agent this chat is starting, before it says anything.
     if ((this.phase === "starting" || this.phase === "finding") && this.role && this.pending.length) {
       return h_flex().id("chat-status").flex_none().w_full().max_w(COLUMN + 36).mx_auto().h(30).px(18).gap(8).items_center().text_size(12).text_color(t.muted)
+        .when(t.wallpaper, (el) => el.bg(t.surface).rounded(8))
         .child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900))
         .child(div().flex_1().min_w(0).truncate().child(`Starting the ${this.role === "coordinator" ? "Assistant" : this.role}…`));
     }
@@ -3378,6 +3381,7 @@ export default class Chat extends View {
       // message wakes it (or comes in at once).
       const waiting = this.waitingNow() && !this.stopping;
       return h_flex().id("chat-status").flex_none().w_full().max_w(COLUMN + 28).mx_auto().h(30).px(14).gap(8).items_center().text_size(12).text_color(t.muted)
+        .when(t.wallpaper, (el) => el.bg(t.surface).rounded(8))
         .when(waiting, (el) => el.child(svg("mods/chat/clock.svg").size(12).flex_none().text_color(t.dim)))
         .when(!waiting, (el) => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
         .child(div().flex_1().min_w(0).truncate().child(doing))

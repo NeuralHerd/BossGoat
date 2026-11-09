@@ -46,7 +46,7 @@ export const WORDS = {
   agentEnded: "This agent has ended",
   taskEnded: "This task's agent has ended",
   unsupported: "No chat for this agent",
-  unsupportedBody: "Chat reads Claude Code's and Codex's own session logs. This agent works in its terminal only.",
+  unsupportedBody: "Chat reads Claude Code, Codex and Cursor session logs. This agent works in its terminal only.",
   notFound: "Can't find this conversation",
   notFoundBody: "Chat reads the agent's own session log, and Herdr can't tell which one this agent writes. Rather than show the wrong one, it shows none.",
   noAgent: "No agent to show",
