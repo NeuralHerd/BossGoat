@@ -174,7 +174,7 @@ export default class Spaces extends View {
       .child(svg("mods/spaces-chat/rocket.svg").size(12).flex_none());
   }
 
-  // SHEP-105: "Talk to Shepherdr" at the top of the sidebar, above the spaces: a voice call with Shepherdr itself, not
+  // SHEP-105: "Talk to BossGoat" at the top of the sidebar, above the spaces: a voice call with Shepherdr itself, not
   // one chat. The window runs it in the shown space's Assistant chat (mods/chat voice.ts: shared "chat.callreq"
   // { pane, at, action: "start" | "mute" | "end" }), but the call hears and reaches every space. On a call the row is the
   // call card: Shepherdr, what it is doing and its clock, Mute and the red hang-up; on the narrow rail, a green wave that ends it.
@@ -190,7 +190,7 @@ export default class Spaces extends View {
     const tab = sp ? coordinatorTab(sp, undefined, ps) : null;
     const chatIn = (id) => ps.find((p) => p.mod === "chat" && p.tab === id)?.pane ?? null;
     const at = tab && chatIn(tab.id) ? tab.id : (sp?.tabs ?? []).map((t) => t.id).find((id) => chatIn(id)) ?? null;
-    if (!at) return toast({ title: "Talk to Shepherdr", body: "This space has no chat to run the call from: open its Assistant first.", level: "info" });
+    if (!at) return toast({ title: "Talk to BossGoat", body: "This space has no chat to run the call from: open its Assistant first.", level: "info" });
     if (!sp.tabs.some((t) => t.id === at && t.active)) run("tab.select", { id: at });
     setShared("chat.callreq", { pane: chatIn(at), at: Date.now(), action: "start" });
   }
@@ -211,7 +211,7 @@ export default class Spaces extends View {
       .hover((s) => s.bg(t.hover))
       .on_click(() => this.startCall())
       .child(svg("mods/chat/audio-lines.svg").size(14).flex_none().text_color(t.muted))
-      .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child("Talk to Shepherdr"))
+      .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child("Talk to BossGoat"))
       .child(round("voice-start", 24, t.foreground, t.background, "mods/chat/audio-lines.svg", () => this.startCall()));
     this.calling = true;
     const secs = Math.max(0, Math.floor((Date.now() - (call.started ?? Date.now())) / 1000));
@@ -225,7 +225,7 @@ export default class Spaces extends View {
     return h_flex().id("voice-card").mx(8).mt(4).py(6).pl(10).pr(6).gap(9).flex_none().items_center().rounded(RADIUS.card).bg(`${green()}1c`).border_1().border_color(`${green()}38`)
       .child(svg("mods/chat/audio-lines.svg").size(14).flex_none().text_color(green()).loop("opacity", { from: 0.45, to: 1, period: 1400 }))
       .child(v_flex().flex_1().min_w(0)
-        .child(div().truncate().font_semibold().text_color(t.foreground).child("Shepherdr"))
+        .child(div().truncate().font_semibold().text_color(t.foreground).child("BossGoat"))
         .child(div().truncate().text_size(TEXT.label).font_medium().text_color(green()).child(`${word} \u00b7 ${clock}`)))
       .child(round("voice-mute", 26, call.muted ? t.foreground : t.raised, call.muted ? t.background : t.muted, call.muted ? "mods/chat/mic-off.svg" : "mods/chat/mic.svg", () => req("mute")))
       .child(round("voice-end", 26, red(), "#ffffff", "mods/chat/phone-x.svg", () => req("end")));
@@ -799,6 +799,14 @@ export default class Spaces extends View {
     }
     if (changed) setShared("space.colors", kept);
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
+      .when(collapsed, el => el.child(h_flex().h(31).flex_none().items_center().justify_center()
+        .child(div().id("sidebar-expand").size(H.sm).flex().items_center().justify_center().rounded(RADIUS.control)
+          .cursor_pointer().text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
+          .on_click(() => {
+            setShared("sidebar.collapsed", false);
+            run("layout.resize", { id: "sidebar", px: shared("sidebar.width") ?? 268 });
+          })
+          .child(svg("mods/workspace-chrome/chevron-right.svg").size(14)))))
       .child(this.voiceRow(t, collapsed))
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(TEXT.label).font_medium().text_color(t.dim)
         .when(!collapsed, el => el.child("Spaces"))
