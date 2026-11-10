@@ -97,7 +97,7 @@ const assistant = (k) => k?.labels?.["herdr.role"] === "coordinator";
 // Why hc didn't do it: { kind, message } from its JSON error ("blocked": a dialog is open), else its words.
 // The composer's round buttons (Send, Call, End call, mic, Mute), and the height of its text row
 // (one line of the box), which the call's row keeps so nothing moves when a call starts.
-const ROUND = 28, TEXT_ROW = 34;
+const ROUND = 28, CHAT_TEXT = 16, TEXT_ROW = 37;
 // Image thumbnails: the box's files are squares this many px, this far apart; under sent
 // messages each image keeps its shape, fitted in THUMB_ONE (one image) or THUMB_MANY (w, h).
 const THUMB = 56, THUMB_GAP = 6;
@@ -122,7 +122,7 @@ const ACT = 22, ACT_GAP = 2, BAND_IN = 4, ACT_ROW = BAND_IN + ACT, GAP = 16;
 const QUIET_PY = 1, QUIET_IN = { top: 5, bottom: 6 };
 // A long reply folds (Show more) when it would run past FOLD_TALL lines (estimated from its
 // words), to its first FOLD lines; LINE_H is a reply's line in px.
-const FOLD = 20, FOLD_TALL = 28, LINE_H = 21;
+const FOLD = 20, FOLD_TALL = 28, LINE_H = 24;
 // A session that is gone (LOST), what the new agent hears (lostMessage) and the chat's note: core/chat-view.js, as
 // the service restarts one for the web app.
 // The picker's row a typed name means (/model sonnet, /model claude-opus-5-5, /model gpt-5):
@@ -135,13 +135,13 @@ function findModel(menus, name) {
   return hit ? { agent: hit.agent, model: hit.model } : null;
 }
 // About how many lines words take at a width (px), for a row's height before it's measured.
-const wrapLines = (text, width) => String(text ?? "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil((l.length * 7) / Math.max(120, width))), 0);
+const wrapLines = (text, width) => String(text ?? "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil((l.length * CHAT_TEXT / 2) / Math.max(120, width))), 0);
 // A folded reply's words that show: the lines (as wrapLines counts them at `width`) filling `h`
 // px, and a few more under the fade (the estimate can run short); a long paragraph is cut where
 // its last one ends. Only those are laid out: a folded reply drawn whole under its clip was far
 // taller than its row, and scrolling up into one blanked the list (#590).
 const shownLines = (text, h, width) => {
-  const per = Math.floor(Math.max(120, width) / 7);
+  const per = Math.floor(Math.max(120, width) / (CHAT_TEXT / 2));
   const out = [];
   let room = Math.ceil(h / LINE_H) + 3;
   for (const l of String(text ?? "").split("\n")) {
@@ -3073,8 +3073,8 @@ export default class Chat extends View {
       case "code": return 16 + (x.clip ?? String(x.code).split("\n").length * 19);
       case "fold": case "queued": return 26;
       case "day": return 18;
-      case "user": case "pending": return 30 + lines(x.text, w * 0.8 - 24) * 20 + (x.from ? 17 : 0) + ((x.images || x.files?.length) ? 20 : 0);
-      case "agent": return 14 + (x.clip ?? lines(x.text, replyWidth(this.width)) * LINE_H);
+      case "user": case "pending": return 30 + wrapLines(x.text, w * 0.8 - 24) * LINE_H + (x.from ? 17 : 0) + ((x.images || x.files?.length) ? 20 : 0);
+      case "agent": return 14 + (x.clip ?? wrapLines(x.text, replyWidth(this.width)) * LINE_H);
       case "tools": return this.opened.has(x.id) ? 26 + x.steps.length * 19 : 20;
       case "artifact": return x.pending || x.line ? 20 : 62;
       case "tasknews": return x.accept ? 26 : 20;
@@ -3138,13 +3138,13 @@ export default class Chat extends View {
     // The person's words sit in a quiet bubble; replies use the full reading column.
     const most = Math.max(240, Math.floor(Math.min(this.width, COLUMN) * 0.8));
     const bubble = (text, faded) => h_flex().w_full().justify_end().child(
-      div().max_w(most).px(12).py(8).rounded(12).bg(t.hover)
+      div().max_w(most).px(12).py(8).rounded(12).bg(t.hover).text_size(CHAT_TEXT).line_height(1.5)
         .text_color(t.foreground).when(faded, (el) => el.opacity(0.55))
-        .child(TextView.markdown(`${pre}chat-md-${x.id}`, this.findMark(typed(this.mentionsIn(text))) || " ").selectable(true)));
-    const theirs = (text) => div().w_full().text_size(14).text_color(t.foreground)
+        .child(TextView.markdown(`${pre}chat-md-${x.id}`, this.findMark(typed(this.mentionsIn(text))) || " ").text_size(CHAT_TEXT).line_height(1.5).selectable(true)));
+    const theirs = (text) => div().w_full().text_size(CHAT_TEXT).line_height(1.5).text_color(t.foreground)
         // Folded: only the lines that show (shownLines()), as their own view
-        .child(x.clip ? this.clipped(t.wallpaper ? null : t.background, x.clip, TextView.markdown(`${pre}chat-md-fold-${x.id}`, this.findMark(this.mentionsIn(shownLines(text, x.clip, replyWidth(this.width)))) || " ").selectable(true))
-          : TextView.markdown(`${pre}chat-md-${x.id}`, this.findMark(this.mentionsIn(text)) || " ").selectable(true));
+        .child(x.clip ? this.clipped(t.wallpaper ? null : t.background, x.clip, TextView.markdown(`${pre}chat-md-fold-${x.id}`, this.findMark(this.mentionsIn(shownLines(text, x.clip, replyWidth(this.width)))) || " ").text_size(CHAT_TEXT).line_height(1.5).selectable(true))
+          : TextView.markdown(`${pre}chat-md-${x.id}`, this.findMark(this.mentionsIn(text)) || " ").text_size(CHAT_TEXT).line_height(1.5).selectable(true));
     const fileLine = (label) => h_flex().gap(5).items_center().text_size(12).text_color(t.dim)
       .child(svg("mods/chat/paperclip.svg").size(12).flex_none()).child(div().truncate().child(label));
     switch (x.kind) {
@@ -4023,15 +4023,15 @@ export default class Chat extends View {
       // scrollbar in an empty box and made it scroll a few pixels on each new line.
       .child(div().relative().w_full().min_h(TEXT_ROW).px(12).pt(9).pb(4)
         // Measured, unseen: a line's height, and the words' height at the box's width (sizeBox()).
-        .child(div().id("chat-line-h").absolute().top(0).left(0).opacity(0).text_size(13).child("Xg")
+        .child(div().id("chat-line-h").absolute().top(0).left(0).opacity(0).text_size(CHAT_TEXT).line_height(1.5).child("Xg")
           .on_size_change((size, cx) => { if (Math.abs((this.lineH ?? 0) - size.height) > 0.1) { this.lineH = size.height; this.sizeBox(); cx.notify(); } }))
         .child(div().absolute().top(0).left(12).right(12).h(0).overflow_hidden().opacity(0)
-          .child(div().id("chat-text-h").w_full().text_size(13)
+          .child(div().id("chat-text-h").w_full().text_size(CHAT_TEXT).line_height(1.5)
             .child(/\n$/.test(this.box.value()) || !this.box.value() ? `${this.box.value()} ` : this.box.value())
             .on_size_change((size, cx) => { if (Math.abs((this.textH ?? 0) - size.height) > 0.1) { this.textH = size.height; this.sizeBox(); cx.notify(); } })))
-        .child(Textarea.new(this.box).w_full().text_size(13).text_color(t.foreground)
+        .child(Textarea.new(this.box).w_full().text_size(CHAT_TEXT).line_height(1.5).text_color(t.foreground)
           .when(Boolean(this.boxSpare && this.lineH), (el) => el.mb(-this.lineH)))
-        .when(!this.box.value().trim(), (el) => el.child(div().absolute().top(9).left(12).text_size(13).text_color(t.dim)
+        .when(!this.box.value().trim(), (el) => el.child(div().absolute().top(9).left(12).text_size(CHAT_TEXT).line_height(1.5).text_color(t.dim)
           .child(this.asks.length || st === "blocked" ? WORDS.replyInstead : this.placeholder()))))
       // While recording: the recording row. Else one row, on the right: what the agent runs on
       // (opens the picker), dictation, Send (or Call). Send never turns into Stop: while the

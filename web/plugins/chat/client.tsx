@@ -167,7 +167,7 @@ function Bubble({ msg, chat, from, out, last, pics, images, writing }: { msg: Me
                 {...keys}
                 {...hold}
                 className={clsx(
-                  'relative max-w-full min-w-0 text-[0.9375rem]/6 text-pretty phone:text-base/6',
+                  'relative max-w-full min-w-0 text-base/6 text-pretty',
                   you ? 'rounded-[18px] bg-bubble px-4 py-2.5' : 'w-full py-1',
                   you ? 'self-end' : 'self-start',
                   // on a touch screen a hold reacts (or offers Remove), so it doesn't start selecting text or a link's preview
@@ -1995,7 +1995,7 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
           </div>
         ) : (
           <>
-            <div className="relative flex min-w-0">
+            <div className="relative flex min-w-0 text-base/6">
               <textarea
                 ref={ref}
                 name="message"

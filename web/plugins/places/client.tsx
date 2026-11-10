@@ -358,7 +358,7 @@ function usePlaceRow({ p, snap, where }: { p: Place; snap: Snapshot; where?: str
 }
 
 /** a row's icon, tucked 2px nearer the name */
-const icon = 'size-4 shrink-0 -mr-0.5'
+const icon = 'size-5 shrink-0 -mr-0.5'
 
 /* ---------- indents: a space in by a chevron's room, its # under its heading's icon ---------- */
 
@@ -679,7 +679,7 @@ function Emoji({ e, className }: { e: string; className?: string }) {
   const name = sidebarIcon(e)
   if (name) return <SidebarIcon name={name} className={clsx(icon, 'text-fg3', className)} />
   return (
-    <span data-icon="emoji" aria-hidden className={clsx(icon, 'grid place-items-center text-[0.9375rem] leading-none phone:text-base', className)}>
+    <span data-icon="emoji" aria-hidden className={clsx(icon, 'grid place-items-center text-xl leading-none', className)}>
       {e}
     </span>
   )
