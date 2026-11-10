@@ -305,3 +305,21 @@ test("HolyCow skill models inherit per space, reset independently and preserve r
   expect(() => s.set("holycow.hc-build", JSON.stringify({ agent: "cursor", effort: "high" }))).toThrow("model ID");
   expect(JSON.parse(readFileSync(file, "utf8")).everywhere.worker).toEqual({ agent: "claude", model: "opus", perm: "manual" });
 });
+
+
+test("shared permission choices persist for roles and HolyCow without changing the model", () => {
+  writeFileSync(file, JSON.stringify({ everywhere: {} }));
+  const s = new Settings(); s.start();
+  for (const [agent, modes] of Object.entries({ claude: ["manual", "auto", "bypassPermissions"], codex: ["ask", "approve", "full"], cursor: ["ask", "auto", "full"] })) {
+    for (const perm of modes) {
+      const pick = { agent, model: "chosen", effort: null, fast: false, perm };
+      s.set("role.worker", JSON.stringify(pick));
+      s.set("holycow.hc-pr", JSON.stringify(pick));
+      const saved = JSON.parse(readFileSync(file, "utf8")).everywhere;
+      expect(saved.worker).toEqual(pick);
+      expect(saved.holycow["hc-pr"]).toEqual(pick);
+      s.set("holycow.hc-review", JSON.stringify(pick));
+      expect(JSON.parse(readFileSync(file, "utf8")).everywhere.holycow["hc-review"].perm).toBe(agent === "claude" ? "plan" : "read-only");
+    }
+  }
+});

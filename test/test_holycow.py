@@ -31,6 +31,28 @@ class HolyCow(unittest.TestCase):
         for obj, key, value in [(settings, "SETTINGS", str(self.file)), (holycow, "HOME", str(self.root / "home"))]:
             p = patch.object(obj, key, value); p.start(); self.addCleanup(p.stop)
 
+    def test_shared_permission_presets_reach_the_task_cli(self):
+        for agent, modes in {"claude": ("manual", "auto", "bypassPermissions"),
+                             "codex": ("ask", "approve", "full"), "cursor": ("ask", "auto", "full")}.items():
+            for perm in modes:
+                with self.subTest(agent=agent, perm=perm):
+                    self.cfg["everywhere"]["holycow"]["hc-pr"] = {"agent": agent, "model": "chosen", "perm": perm}
+                    self.file.write_text(json.dumps(self.cfg))
+                    pick = settings.worker_pick(self.s, {"skill": "hc-pr"})
+                    self.assertEqual(pick["perm"], perm)
+                    args = settings.argv_for(pick)
+                    if agent == "codex" and perm in ("ask", "approve"):
+                        self.assertIn('approvals_reviewer="%s"' % ("user" if perm == "ask" else "auto_review"), args)
+                        self.assertIn("workspace-write", args)
+                        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", args)
+                    if agent == "cursor" and perm == "ask":
+                        self.assertNotIn("--auto-review", args)
+                        self.assertNotIn("--force", args)
+                    if agent == "cursor" and perm == "auto":
+                        self.assertIn("--auto-review", args)
+                    if agent == "claude" and perm != "bypassPermissions":
+                        self.assertIn("default" if perm == "manual" else "auto", args)
+
     def test_skill_flag_is_validated_and_resettable(self):
         task = {}
         settings.set_opts(task, SimpleNamespace(skill="hc-plan"))

@@ -20,6 +20,7 @@ import { props, theme, machines, home, exec, readTextFile, writeTextFile, closeO
 import { spaces, inRender } from "./live.js";
 import { SHEPHERDR_FILE, SHEPHERDR_DEFAULTS, LOCAL_MACHINE, shepherdrFor, shepherdrLayers, machineOfSpace } from "./coordinator.js";
 import * as models from "./settings.js";
+import { permissionOptions } from "./core/agents.js";
 import { layoutSection } from "./layout.js";
 import { appearanceInit, appearanceSection } from "./appearance.js";
 import { APPEARANCE, WALLPAPER } from "./core/wallpaper.js";
@@ -508,17 +509,20 @@ export default class ShepherdrSettings extends View {
   }
 
   skillPermissions(t, c, locked) {
-    const sel = c?.sel, perms = c?.data?.menus?.[sel?.agent]?.perms ?? [];
+    const sel = c?.sel, perms = permissionOptions(c?.data?.menus?.[sel?.agent]?.perms, sel?.perm);
     if (!sel || !perms.length) return div();
     const label = perms.find((p) => p.id === sel.perm)?.label ?? "CLI default";
     return h_flex().id(`skill-permissions-${c.key}`).h(28).px(7).gap(5).items_center().rounded(7).text_size(12).text_color(t.muted)
       .when(!locked, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_mouse_down("left", (e) => { c.permAt = e.bounds ?? e.position; })
         .on_click((_e, cx) => {
           cx.stop_propagation();
-          openOverlay({ mod: "chat-models", kind: "popup", width: 260, height: 10 + 31 * perms.length,
-            props: { pick: "perm", key: c.key, options: perms, current: sel.perm, width: 260, height: 10 + 31 * perms.length } });
+          const W = 260, H = 41 + 31 * perms.length, b = c.permAt;
+          const at = b ? { x: Math.max(8, b.x + (b.width ?? 0) - W), y: b.y - H - 6 >= 8 ? b.y - H - 6 : b.y + (b.height ?? 28) + 6 } : "pointer";
+          openOverlay({ mod: "chat-models", kind: "popup", frame: "none", at, width: W, height: H,
+            props: { pick: "perm", agent: sel.agent, key: c.key, options: perms, current: sel.perm, width: W, height: H } });
         }))
-      .child(svg("mods/chat-models/shield.svg").size(14).flex_none())
+      .child(svg(`mods/chat-models/permission-${perms.find((p) => p.id === sel.perm)?.icon ?? "ask"}.svg`).size(16).flex_none())
       .child(div().child(label))
       .when(!locked, (el) => el.child(svg("mods/workspace-chrome/chevron-down.svg").size(12).flex_none()));
   }
@@ -541,7 +545,8 @@ export default class ShepherdrSettings extends View {
         const control = v_flex().gap(4).items_end()
           .child(h_flex().gap(8).items_center()
             .child(c?.sel ? models.modelButton(t, c, {}, cx) : div().child(LOADING_AGENTS))
-            .child(this.skillPermissions(t, c, r.id === "hc-review")))
+            .child(this.skillPermissions(t, c, r.id === "hc-review"))
+            .child(c?.sel ? models.permissionInfoButton(t, c.sel.agent, c.sel.perm) : div()))
           .when(!this.scope && c && !c.unset, (el) => el.child(button(`follow-${r.id}`, HOLYCOW.follow,
             { kind: "plain", onClick: (_e, cx) => this.reset("holycow", r.id, cx) })));
         const role = ROLES.find((x) => x.id === r.role).title;

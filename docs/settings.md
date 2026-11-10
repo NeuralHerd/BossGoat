@@ -201,3 +201,20 @@ Automations accept `--skill` and `--kind` on `auto add` and `auto edit`, and car
 Software automations require a valid skill before they can be saved or resumed. Older unassigned automations
 report a missing-assignment error instead of launching a worker; assign their skill with
 `herdr-task auto edit <id> --skill <skill-id>`.
+
+
+### Shared permission choices
+
+Chat, Agents and HolyCow use the same three choices, with icons and an About permissions button:
+
+| Choice | Claude Code | Codex | Cursor |
+| --- | --- | --- | --- |
+| Ask for approval | Manual permission mode | Workspace write, approval on request, user reviewer | Normal launch without forced or automatic approval flags |
+| Approve for me | Auto permission mode | Workspace write, approval on request, automatic reviewer | Auto-review |
+| Full access | Bypass permissions | Bypass approvals and sandbox | Force allow, except denied commands |
+
+Approval checks still differ by agent. Cursor's saved approval settings and allow rules apply to its normal launch. Automatic review needs support from the installed CLI, account, model and organization policy. Full access does not override every provider or organization restriction. The info button explains the active agent's behavior.
+
+Existing special modes remain saved and appear as Custom (or Read only); opening a menu never migrates them. HolyCow Review remains read-only. Changing agents maps the selected shared choice to the new CLI and preserves read-only restrictions. Settings affect new launches; chat changes restart only the current agent.
+
+Mappings follow the [official OpenAI sandbox documentation](https://learn.chatgpt.com/docs/sandboxing), [Claude permission modes](https://code.claude.com/docs/en/permissions), and [Cursor CLI parameters](https://cursor.com/docs/cli/reference/parameters). Cursor Auto-review is also verified against the installed CLI's help.

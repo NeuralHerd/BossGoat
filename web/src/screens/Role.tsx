@@ -8,6 +8,8 @@ import { act } from '../kernel.ts'
 import { ModelList } from '../restart.tsx'
 import { CheckIcon, DownIcon, ic, Menu, MenuItem, MenuLabel, MenuSeparator, MenuSwitch, ModeIcon, NextIcon, Primary, SpeedIcon, Tab, Tabs, TextBox } from '../ui.tsx'
 import * as AG from '@core/agents.js'
+import { permissionOptions } from '@core/agents.js'
+import { PermissionInfo, PermissionIcon } from '../PermissionInfo.tsx'
 import * as ST from '@core/settings.js'
 
 const { levelName, NAMES, menuFor } = AG as unknown as { levelName: (e: string | null) => string | null; NAMES: Record<string, string>; menuFor: (agent: string, defaults: object) => ModelMenus['menus'][string] }
@@ -80,8 +82,8 @@ export function PermissionButton({ row, level }: { row: SettingRow; level: strin
   const sel = row.agent?.sel
   if (!sel) return null
   const locked = row.key === 'holycow.hc-review'
-  const perms = menuFor(sel.agent, {}).perms
   const current = locked ? reviewPerm(sel.agent) : sel.perm
+  const perms = permissionOptions(menuFor(sel.agent, {}).perms, current)
   const label = perms.find((p) => p.id === current)?.label ?? 'CLI default'
   const choose = (perm: string) => {
     if (locked) return
@@ -96,14 +98,15 @@ export function PermissionButton({ row, level }: { row: SettingRow; level: strin
     setUp(!!r && below < 40 + 40 * perms.length && r.top > below)
     setOpen(!open)
   }
-  return <span ref={ref} className="relative max-w-full">
+  return <span ref={ref} className="relative inline-flex max-w-full items-center">
     <button type="button" disabled={locked} aria-label={`${row.label} permissions: ${label}`} aria-haspopup="menu" aria-expanded={open}
       onClick={toggle} className="press-dim inline-flex h-7 items-center gap-1.5 rounded-row px-2 text-[0.8125rem] whitespace-nowrap text-fg2 enabled:hover:bg-hover coarse:h-9 phone:h-9">
-      <ModeIcon className={ic} /><span>{label}</span>{!locked ? <DownIcon className={clsx(ic, 'size-3.5')} /> : null}
+      <PermissionIcon kind={perms.find((p) => p.id === current)?.icon} /><span>{label}</span>{!locked ? <DownIcon className={clsx(ic, 'size-3.5')} /> : null}
     </button>
-    {open ? <Menu label={MODEL_MENU.permissions} onClose={() => setOpen(false)} className={clsx('absolute right-0 z-20 w-[220px] max-w-[calc(100vw-2rem)]', up ? 'bottom-full mb-1' : 'top-full mt-1')}>
+    <PermissionInfo agent={sel.agent} perm={current} />
+    {open ? <Menu label={MODEL_MENU.permissions} onClose={() => setOpen(false)} className={clsx('absolute right-0 z-20 w-[250px] max-w-[calc(100vw-2rem)]', up ? 'bottom-full mb-1' : 'top-full mt-1')}>
       <MenuLabel>{MODEL_MENU.permissions}</MenuLabel>
-      {perms.map((p) => <MenuItem key={p.id} role="menuitemradio" aria-checked={p.id === current} icon={p.id === current ? <CheckIcon className={ic} /> : null} onClick={() => choose(p.id)}>{p.label}</MenuItem>)}
+      {perms.map((p) => <MenuItem key={p.id} role="menuitemradio" aria-checked={p.id === current} icon={<PermissionIcon kind={p.icon} />} hint={p.id === current ? <CheckIcon className={ic} /> : null} onClick={() => choose(p.id)}>{p.label}</MenuItem>)}
       {error ? <p role="alert" className="px-3 py-2 text-[0.75rem] text-need-fg">{error}</p> : null}
     </Menu> : null}
   </span>
@@ -128,6 +131,7 @@ function ModelMenu({ start, up, readOnly = false, onClose, save }: { start: Agen
   }
   const offeredMenu = data?.menus[sel.agent]
   const menu = readOnly && offeredMenu ? { ...offeredMenu, perms: offeredMenu.perms.filter((p) => p.id === reviewPerm(sel.agent)) } : offeredMenu
+  const permissions = permissionOptions(menu?.perms, sel.perm)
   const model = menu?.models.find((m) => m.id === sel.model)
   const level = sel.effort ?? model?.defaultEffort ?? null
   const fast = !!model?.fast
@@ -156,12 +160,13 @@ function ModelMenu({ start, up, readOnly = false, onClose, save }: { start: Agen
                 hint={<span className="inline-flex items-center gap-1">{perm?.label ?? ''}<NextIcon className={clsx('size-3 transition-transform', perms && 'rotate-90')} /></span>}>
                 {MODEL_MENU.permissions}
               </MenuItem>
-              {perms ? menu.perms.map((p) => (
-                <MenuItem key={p.id} role="menuitemradio" aria-checked={p.id === sel.perm} className="pl-8 phone:pl-10" icon={p.id === sel.perm ? <CheckIcon className={ic} /> : null}
+              {perms ? permissions.map((p) => (
+                <MenuItem key={p.id} role="menuitemradio" aria-checked={p.id === sel.perm} className="pl-8 phone:pl-10" icon={<PermissionIcon kind={p.icon} />} hint={p.id === sel.perm ? <CheckIcon className={ic} /> : null}
                   onClick={() => { setPerms(false); if (p.id !== sel.perm) change({ ...sel, perm: p.id }) }}>
                   {p.label}
                 </MenuItem>
               )) : null}
+              {perms ? <PermissionInfo agent={sel.agent} perm={sel.perm} /> : null}
             </>
           ) : null}
           {error ? <p role="alert" className="px-3 pt-1 pb-2 text-[0.75rem] text-need-fg">{error}</p> : null}
