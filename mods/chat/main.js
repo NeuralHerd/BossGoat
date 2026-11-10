@@ -4230,7 +4230,7 @@ export default class Chat extends View {
     if (this.call && paneFocused && !this.callHadFocus) cx.timer.after(0, () => { if (this.call) this.callFocus.focus(); });
     this.callHadFocus = Boolean(this.call && paneFocused);
     this.alerts(cx);
-    const picture = currentWallpaper();
+    const picture = currentWallpaper(cx);
     const t = wallpaperTheme(theme(), picture);
     const st = this.status() ?? null;
     if (st === "working" && this.lastWorking !== "working") this.workingSince = Date.now();
