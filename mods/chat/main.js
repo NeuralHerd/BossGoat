@@ -2808,19 +2808,19 @@ export default class Chat extends View {
         continue;
       }
       // This chat started the agent from a template with the person's words as its task: the
-      // template's part is a quiet row, the person's words their own message.
+      // template stays in the agent's context; only the person's words appear in chat.
       const ft = this.firstTask?.trim();
       if (i === first && this.start === 0 && x.kind === "user" && ft && this.t?.template && String(x.text ?? "").trim().endsWith(ft)) {
-        const body = String(x.text).trim().slice(0, -ft.length).trim();
-        if (body) out.push({ kind: "brief", id: `${x.id}:b`, label: "New session", text: body });
         x = { ...x, text: ft };
       }
-      if (x.kind === "user" && !(i === first && ft && x.text === ft) && this.brief(x, i, first)) {
+      const brief = x.kind === "user" && !(i === first && ft && x.text === ft) ? this.brief(x, i, first) : null;
+      if (brief === "New session") continue;
+      if (brief) {
         // Not typed by the person: a launch brief or another agent's message, as a quiet row.
         // A fresh start's handover says it all in its label.
         const restart = /^<restart>/.test(x.text ?? "");
         // Another agent's message (who: its sender) is drawn as a message (SHEP-12).
-        out.push({ kind: "brief", id: x.id, label: this.brief(x, i, first), text: restart ? x.text.replace(/<\/?restart>/g, "") : x.from ? unsigned(x.text) : x.text, bare: restart, ...(x.from ? { who: fromName(x, (f, t) => this.sender(f, t), this.names()), at: x.at } : {}) });
+        out.push({ kind: "brief", id: x.id, label: brief, text: restart ? x.text.replace(/<\/?restart>/g, "") : x.from ? unsigned(x.text) : x.text, bare: restart, ...(x.from ? { who: fromName(x, (f, t) => this.sender(f, t), this.names()), at: x.at } : {}) });
         continue;
       }
       if (x.kind === "user") {

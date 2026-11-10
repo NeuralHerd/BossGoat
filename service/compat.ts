@@ -556,15 +556,14 @@ export class Compat {
       if (x.at) at = x.at;
       while (mi < made.length && x.at && made[mi].at < x.at) messages.push(newsLine(made[mi++]));
       const reactions = reactionsOf(reader.conv?.reactions?.get(x.id));
-      // the template's part a quiet "New session" row, the person's words their own message
+      // The template stays in the agent's context; only the person's words appear in chat.
       const first = i === fi && !!ft && x.kind === "user" && String(x.text ?? "").trim().endsWith(ft);
       if (first) {
-        const body = String(x.text).trim().slice(0, -ft!.length).trim();
-        if (body) messages.push({ id: `${x.id}:b`, who: "you", at: x.at, text: body, brief: { label: "New session" } });
         x = { ...x, text: ft };
       }
       // not typed by the person: a launch brief or another agent's message, as one quiet row
       const brief = x.kind === "user" && !first ? briefLabel(x, i, { start: reader.start, template, task, sender, ...peers, first: fi }) : null;
+      if (brief === "New session") continue;
       if (brief) {
         const restart = /^<restart>/.test(x.text ?? "");
         messages.push({ id: x.id, who: "you", at: x.at, text: restart ? x.text.replace(/<\/?restart>/g, "") : x.from ? unsigned(x.text) : x.text, brief: { label: brief, ...(restart ? { bare: true } : {}), ...(x.from ? { from: fromName(x, sender, peers) } : {}) } });
