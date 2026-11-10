@@ -299,7 +299,7 @@ const CURSOR_BARE = new Set(["--continue", "--plan", "--force", "-f", "--yolo", 
 const CLAUDE_DROP = new Set(["--model", "--effort", "--settings", "--session-id", "--resume", "-r", "--permission-mode"]);
 const CLAUDE_BARE = new Set(["--continue", "-c", "--fork-session", "--dangerously-skip-permissions"]);
 // Flags whose next word is their value (so it isn't taken for a first message).
-const CLAUDE_VALUE = new Set(["--add-dir", "--mcp-config", "--append-system-prompt", "--system-prompt",
+const CLAUDE_VALUE = new Set(["--add-dir", "--mcp-config", "--append-system-prompt", "--append-system-prompt-file", "--system-prompt", "--system-prompt-file", "--system-prompt-snapshot",
   "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools", "--agent", "--agents", "--plugin-dir",
   "--fallback-model", "--output-format", "--input-format", "--name", "--setting-sources", "--betas", "--debug-file"]);
 const CODEX_VALUE = new Set(["-c", "--config", "-m", "--model", "-p", "--profile", "-s", "--sandbox", "-a", "--ask-for-approval",

@@ -248,12 +248,12 @@ export function literal(text) {
 // agent was started from a template (a coordinator), as a handoff, or for a task (herdr-task); and any message
 // another agent sent with hc. i: its place in the conversation; start: the first byte read (0: the log's start).
 // first: where the session's first message is in the conversation (firstUser()).
-export function briefLabel(x, i, { start = null, template = null, task = false, sender = (f) => f, machineName = (m) => m, here = null, first = 0 } = {}) {
+export function briefLabel(x, i, { start = null, template = null, background = false, task = false, sender = (f) => f, machineName = (m) => m, here = null, first = 0 } = {}) {
   if (x.from) return `Message from ${fromName(x, sender, { machineName, here })}`;
   if (i !== first || start !== 0) return null;
   if (/^<restart>/.test(x.text ?? "")) return "New session";
   if (/^You are taking over this tab/.test(x.text ?? "") || /^herdr-handoff/.test(template ?? "")) return "Handoff from the previous agent";
-  if (template) return "New session";
+  if (template && !background) return "New session";
   if (task) return "Task brief";
   return null;
 }

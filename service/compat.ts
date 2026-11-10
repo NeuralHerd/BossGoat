@@ -10,6 +10,7 @@ import * as SPc from "../core/spaces.js";
 import { kindOf as kindOfTerm } from "../core/chat-reader.js";
 import * as CL from "../core/chat-log.js";
 import * as CV from "../core/chat-view.js";
+import { hasAssistantContext } from "../core/assistant-context.js";
 import { taskArtifacts } from "../core/task-artifacts.js";
 const { summary, names, pilotLine } = CL as any;
 const { senderName, briefLabel, firstUser, firstKeys, newsTimeline, resolveArtifacts, unsigned, fromName, sentTo, selfName, subagentsOf, isHelper } = CV as any;
@@ -537,6 +538,7 @@ export class Compat {
     // which artifact each publish made (core/chat-view.js resolveArtifacts, as the window's chat)
     const arts = resolveArtifacts(items, this.rawArts.filter((a: any) => (a.machine ?? null) === machine), String(reader.addr ?? "").split("/").pop());
     const template = t?.template ?? null, task = Boolean(t?.labels?.["herdr.task"]);
+    const background = t?.labels?.["herdr.assistant.context"] === "background" || hasAssistantContext(t?.foreground?.argv ?? t?.argv ?? []);
     const mentionable = this.tasksFor(key);
     const own = this.chats.get(key);
     // what pages sent it, known again in the log: the page's id comes back on it
@@ -562,7 +564,7 @@ export class Compat {
         x = { ...x, text: ft };
       }
       // not typed by the person: a launch brief or another agent's message, as one quiet row
-      const brief = x.kind === "user" && !first ? briefLabel(x, i, { start: reader.start, template, task, sender, ...peers, first: fi }) : null;
+      const brief = x.kind === "user" && !first ? briefLabel(x, i, { start: reader.start, template, background, task, sender, ...peers, first: fi }) : null;
       if (brief === "New session") continue;
       if (brief) {
         const restart = /^<restart>/.test(x.text ?? "");

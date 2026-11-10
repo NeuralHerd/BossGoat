@@ -6,6 +6,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Compat } from "./compat.ts";
+import { execTemplate } from "./spaces.ts";
+import { briefLabel } from "../core/chat-view.js";
 import * as CL from "../core/chat-log.js";
 const { LOG, Conversation, records } = CL as any;
 
@@ -70,4 +72,66 @@ test("a later history page never hides its first user message as startup instruc
   compat.firstTask = () => asked;
   const chat = compat.chat("p:local:s1", { conv: c, start: 900, machine: null, addr: "t9", kind: "claude" }, { template: "assistant" });
   expect(chat.messages.map((m: any) => m.text)).toEqual(["New session: investigate this error", "Checking."]);
+});
+
+
+test("background Assistant context never hides the first real request, including a Terminal-first start", async () => {
+  const c = await conv([user("p0", asked, 0), said("a0", "Got it.", 1)]);
+  for (const identity of [
+    { labels: { "herdr.assistant.context": "background" } },
+    { foreground: { argv: ["claude", "--append-system-prompt-file", "/fixture/.config/herdr-core/assistant-context/role.txt"] } },
+    { argv: ["claude", "--append-system-prompt-file", "/fixture/.config/herdr-core/assistant-context/role.txt"] },
+  ]) {
+    const compat = new Compat() as any;
+    compat.firstTask = () => null;
+    const chat = compat.chat("p:local:s1", { conv: c, start: 0, machine: null, addr: "t9", kind: "claude" }, { template: "herdr-assistant", ...identity });
+    expect(chat.messages.map((m: any) => m.text)).toEqual([asked, "Got it."]);
+    expect(chat.messages.some((m: any) => m.brief)).toBe(false);
+  }
+});
+
+test("background context changes only the template brief, keeping task and handoff meaning", () => {
+  const background: any = { start: 0, background: true, template: "herdr-assistant" };
+  expect(briefLabel({ text: asked }, 0, background)).toBeNull();
+  expect(briefLabel({ text: "Implement this task" }, 0, { ...background, task: true })).toBe("Task brief");
+  expect(briefLabel({ text: "You are taking over this tab. Preserve the work." }, 0, background)).toBe("Handoff from the previous agent");
+  expect(briefLabel({ text: "<restart>Resume the work.</restart>" }, 0, background)).toBe("New session");
+});
+
+test("Claude Assistant launch puts role instructions in background context, preserving other agent templates", async () => {
+  for (const [name, command, background] of [
+    ["assistant", "claude --model sonnet", true],
+    ["coordinator", "claude --model sonnet", true],
+    ["assistant", "cursor-agent --model auto", false],
+    ["worker", "claude --model sonnet", false],
+  ] as const) {
+    const source = `---\nname: ${name}\ncommand: ${command}\n---\nKeep this customized role instruction.\n`;
+    let written = "";
+    const hub: any = { call: async (method: string, { argv, on }: any) => {
+      expect(method).toBe("machine.exec");
+      expect(on).toBe("vm");
+      const reading = argv[2].includes('cat "$dir/$1.md"');
+      if (argv[2].includes('printf "%s"')) written = argv[5];
+      return { code: 0, stdout: Buffer.from(reading ? source : "").toString("base64"), stderr: "" };
+    } };
+    const launch = await execTemplate(hub, name, "vm");
+    expect(launch.background).toBe(background);
+    expect(written).toContain("CLAUDE_CODE_");
+    expect(launch.words).toBe(background ? "" : "Keep this customized role instruction.");
+    const body = written.split(/^---$/m).slice(2).join("---").trim();
+    expect(body).toBe(launch.words);
+    if (background) expect(written).toContain("herdr-assistant-context");
+    else expect(written).toContain(`exec ${command}`);
+    launch.done();
+  }
+});
+
+
+test("a failed background-context launch never falls back to sending the role as a user message", async () => {
+  const source = "---\nname: assistant\ncommand: claude --model sonnet\n---\nCustom role instructions.\n";
+  const hub: any = { call: async (_method: string, { argv }: any) => {
+    const reading = argv[2].includes('cat "$dir/$1.md"');
+    return { code: reading ? 0 : 1, stdout: Buffer.from(reading ? source : "").toString("base64"), stderr: "" };
+  } };
+  await expect(execTemplate(hub, "assistant", null)).rejects.toThrow("Couldn't prepare the Assistant's instructions");
 });

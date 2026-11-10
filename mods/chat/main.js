@@ -50,6 +50,7 @@ import * as slash from "./slash.js";
 import * as mentions from "./core/mentions.js";
 import * as agent from "./agent.js";
 import { cleanCommand } from "./core/clean-env.js";
+import { assistantContext, hasAssistantContext } from "./core/assistant-context.js";
 import * as choices from "./settings.js";
 import { Dictation, BUN_PATH, warmAudio } from "./dictate.js";
 
@@ -1003,8 +1004,8 @@ export default class Chat extends View {
     // A task's worker: its task's id (herdr-task names its agents hat-4-fix-login).
     const named = /^([a-z][a-z0-9]*)-(\d+)(?:-|$)/.exec(t.name ?? "");
     const ref = this.workerTasks().get(t.address)?.ref ?? (t.labels?.["herdr.task"] && named ? `${named[1].toUpperCase()}-${named[2]}` : null);
-    // An Assistant's role is in its first message (its template): it gets that again.
-    const template = assistant(t) && !t.address.includes("/") ? await readTextFile(`${home()}/.config/herdr-core/templates/assistant.md`).catch(() => null) : null;
+    // Legacy Assistants need their role again; newer Claude launches keep it in their context file.
+    const template = assistant(t) && !hasAssistantContext(fresh) && !t.address.includes("/") ? await readTextFile(`${home()}/.config/herdr-core/templates/assistant.md`).catch(() => null) : null;
     const msg = lostMessage({ ref, template });
     const mine = t.address === this.addr;
     if (mine) { this.note = { id: `note-${Date.now()}`, text: WORDS.sessionGone }; cx.notify(); }
@@ -1634,7 +1635,7 @@ export default class Chat extends View {
       // session's markers the holder may carry (core/clean-env.js), then execs the agent: hc runs a
       // template's command under sh -c, and where sh is dash (Debian, Ubuntu) the shell would stay
       // the terminal's program, so the chat wouldn't know its CLI.
-      let launch = template, oneOff = null, words = "";
+      let launch = template, oneOff = null, words = "", background = false;
       const st = this.choice?.sel ?? props()?.settings;
       const on = machine ? { on: machine } : {};
       const there = !machine || !st?.agent ? true : (await knownAgents(on).catch(() => []))
@@ -1647,16 +1648,26 @@ export default class Chat extends View {
         const own = /^command:[ \t]*(.+)$/m.exec(head?.[1] ?? "")?.[1]?.trim();
         const cmd = st?.agent && there ? agent.argvFor(st, { agent: null, argv: [] }).argv.map(q).join(" ") : own;
         if (body.trim() && cmd) {
-          words = body.trim();
+          const context = assistantContext(cmd, template);
+          background = Boolean(context);
+          words = context ? "" : body.trim();
           oneOff = `herdr-${template}-${Date.now().toString(36)}`;
-          const file = `---\nname: ${oneOff}\ndescription: A one-off ${template} start with chosen settings (mods/chat), removed after use.\ncommand: ${cleanCommand(cmd)}\n---\n${body}`;
-          await exec("sh", ["-c", TEMPLATE + 'printf "%s" "$2" > "$dir/$1.md"', "x", oneOff, file], on);
+          const file = `---\nname: ${oneOff}\ndescription: A one-off ${template} start with chosen settings (mods/chat), removed after use.\ncommand: ${cleanCommand(context ?? cmd)}\n---\n${context ? "" : body}`;
+          const wrote = await exec("sh", ["-c", TEMPLATE + 'printf "%s" "$2" > "$dir/$1.md"', "x", oneOff, file], on).catch(() => null);
+          if (wrote?.code !== 0) {
+            p.failed = "Couldn't prepare the Assistant's instructions. Try again.";
+            if (!msg) toast({ title: "Couldn't start the Assistant", body: p.failed });
+            this.phase = "fresh";
+            cx.notify();
+            return;
+          }
           launch = oneOff;
         }
       }
       const args = ["run", "--bg", "--json", "--no-parent", "--keep", ...(machine ? ["--on", machine] : []), ...(folder ? ["--cwd", folder] : []),
         "--label", `herdr.chat=${pane}`, "--label", `herdr.chat.slot=${this.slot}`, "--label", `herdr.chat.origin=slot:${this.slot}`,
         "--label", `herdr.role=${this.role}`,
+        ...(background ? ["--label", "herdr.assistant.context=background"] : []),
         ...(space ? ["--label", `herdr.coordinator.space=${String(space.id).split("/").pop()}`] : []),
         ...(rec?.tab ? ["--label", `herdr.coordinator.tab=${String(rec.tab).split("/").pop()}`] : []),
         launch, ...(task ? [task] : [])];
@@ -1670,7 +1681,7 @@ export default class Chat extends View {
       // idle past that screen (follow()), so the Assistant never starts without its instructions.
       const late = (r.code !== 0 || !out.address) && this.slotAgent();
       if (late) out = { address: late, first_message: { sent: false } };
-      if (out.address && out.first_message?.sent === false && words) this.firstSend = [words, task].filter(Boolean).join("\n\n");
+      if (out.address && out.first_message?.sent === false) this.firstSend = [words, task].filter(Boolean).join("\n\n") || null;
       if (r.code !== 0 && !late || !out.address) {
         p.failed = (r.stderr || r.stdout || "It didn't start.").trim();
         if (!msg) toast({ title: `The ${this.role === "coordinator" ? "Assistant" : this.role} didn't start`, body: p.failed, level: "error" });
@@ -2996,7 +3007,8 @@ export default class Chat extends View {
   brief(x, i, first = 0) {
     // core/chat-view.js: the web app's chat labels them the same way. first: where the session's
     // first message is (firstUser()).
-    return briefLabel(x, i, { first, start: this.start, template: this.t?.template ?? null, task: Boolean(this.t?.labels?.["herdr.task"]), sender: (f, t) => this.sender(f, t), ...this.names() });
+    const background = this.t?.labels?.["herdr.assistant.context"] === "background" || hasAssistantContext(this.t?.foreground?.argv ?? this.t?.argv ?? []);
+    return briefLabel(x, i, { first, start: this.start, template: this.t?.template ?? null, background, task: Boolean(this.t?.labels?.["herdr.task"]), sender: (f, t) => this.sender(f, t), ...this.names() });
   }
 
   // What a row's height depends on: measured once per key and width.
