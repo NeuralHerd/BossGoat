@@ -7,7 +7,7 @@
 // lists the pages in one rounded group, as iOS's Settings does, and a tap pushes one over the list; a wider screen
 // keeps the list down its side.
 import clsx from 'clsx'
-import { ModelButton, openRole } from './screens/Role.tsx'
+import { ModelButton, PermissionButton, openRole } from './screens/Role.tsx'
 import { MachineDetails } from './MachineDetails.tsx'
 import { askServeFrom } from './screens/ServeFrom.tsx'
 // The window's words for every page: core/settings.js (mods/shepherdr-settings reads the same)
@@ -33,6 +33,7 @@ import {
   ChatIcon,
   CheckIcon,
   CogIcon,
+  CowIcon,
   DownIcon,
   Ghost,
   GlobeIcon,
@@ -463,6 +464,7 @@ const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   'How tasks work': PlanIcon,
   'Private instructions': PlanIcon,
   Agents: ModelIcon,
+  HolyCow: CowIcon,
   Tasks: TasksIcon,
   'Task IDs': TasksIcon,
   Autopilot: AutopilotIcon,
@@ -624,6 +626,7 @@ function Control({ row, phone, set, edit, level }: { row: SettingRow; phone: boo
     return (
       <span className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
         <ModelButton row={row} level={level ?? 'all'} />
+        {row.key.startsWith('holycow.') ? <PermissionButton row={row} level={level ?? 'all'} /> : null}
         {row.key.startsWith("holycow.") && row.extra ? <Ghost onClick={() => set(null as unknown as string)}>{ST.HOLYCOW.follow}</Ghost> : null}
         {row.agent.other ? <Ghost onClick={() => set(null as unknown as string)}>{ST.USE_OTHER_CLI}</Ghost> : null}
         {row.file ? <Ghost onClick={() => openRole({ kind: 'file', role, title: told, file: row.file! })}>{ST.EDIT_INSTRUCTIONS}</Ghost> : null}
@@ -698,6 +701,7 @@ function PageBody({ page, phone, set, refused, clear, hint }: { page: Page; phon
       {row.key in registry.settingActions ? <Small className="text-pretty">{row.value}</Small> : null}
       {/* its line; a second (Backup's "Can't on vm: Codex is signed out.") under it, as the window's */}
       {row.hint ? <Small className="text-pretty whitespace-pre-line">{row.hint}</Small> : null}
+      {row.key === 'holycow.hc-review' ? <Small>{ST.HOLYCOW.reviewPermissions}</Small> : null}
       {/* the exact words it adds to every new task's brief, as it is set now */}
       {row.line ? <details className="text-[0.8125rem] text-fg2"><summary className="cursor-pointer">Words this adds to each new task</summary><p className="text-pretty">“{row.line}”</p></details> : null}
       {/* as the window's: "Inherited from Everywhere" / "Set for this space · Reset"; on Everywhere the spaces that set
@@ -709,7 +713,7 @@ function PageBody({ page, phone, set, refused, clear, hint }: { page: Page; phon
           <span aria-hidden>·</span>
           <button type="button" aria-label={`${ST.RESET}: ${ST.RESET_TIP(row.inherits.from)}`} onClick={() => set(row.key, null)}
             className="press-dim relative font-medium text-accent after:absolute after:-inset-x-1 after:-inset-y-1.5 coarse:after:-inset-y-3">
-            {ST.RESET}
+            {row.key.startsWith('holycow.') ? ST.HOLYCOW.reset : ST.RESET}
           </button>
         </Small>
       ) : null}
@@ -744,6 +748,7 @@ function PageBody({ page, phone, set, refused, clear, hint }: { page: Page; phon
       <div className={clsx('flex flex-col gap-1', phone && 'px-4')}>
         {phone ? null : <h2 className="text-[0.9375rem] font-semibold">{page.name}</h2>}
         {page.about ? <p className={clsx('text-pretty text-fg2', phone ? 'text-[0.9375rem]' : 'text-[0.8125rem]')}>{page.about}</p> : null}
+        {page.name === ST.HOLYCOW.title ? <Small className="text-pretty">{page.level && page.level !== 'all' ? ST.HOLYCOW.resetAbout : ST.HOLYCOW.followAbout}</Small> : null}
         {hint ? <p className={clsx('text-pretty text-fg3', phone ? 'text-[0.9375rem]' : 'text-[0.8125rem]')}>{hint}</p> : null}
       </div>
       {page.vault && page.level ? <SecretsPage level={page.level} page={page} phone={phone} /> : null}

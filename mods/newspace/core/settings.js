@@ -11,7 +11,7 @@ import { SERVE } from "./host.js";
 // the others are one setting for every space (docs/settings.md says which and why).
 export const SECTIONS = [
   { id: "agents", title: "Agents", icon: "bot", space: true },
-  { id: "holycow", title: "HolyCow Agents", icon: "bot", space: true },
+  { id: "holycow", title: "HolyCow", icon: "cow", space: true },
   { id: "tasks", title: "Tasks", icon: "list-checks", space: true },
   // Everywhere's heartbeat, schedule and events, and a space's own (core/autopilot.js); a space switches it on in its
   // Assistant's header
@@ -69,10 +69,13 @@ export const ROLES = [
     told: "What every reviewer is told first" },
 ];
 export const HOLYCOW = {
-  title: "HolyCow Agents", policyTitle: "Skill assignment", policy: "Required for software tasks",
+  title: "HolyCow", policyTitle: "Skill assignment", policy: "Required for software tasks",
   about: "The Assistant assigns a HolyCow skill before software work starts. Unassigned tasks wait for a skill. Each skill uses the model below; install its instructions on every machine that runs it.",
   instructions: "Role instructions still govern tasks and reviews. HolyCow adds the installed skill's instructions and references; it does not replace those rules.",
-  follow: "Use role model",
+  follow: "Use role defaults", reset: "Reset to inherited settings",
+  followAbout: "Use role defaults restores this skill's model, reasoning, speed, and permissions from its configured role.",
+  resetAbout: "Reset restores inherited skill settings, including any Everywhere override.",
+  reviewPermissions: "Review permissions are always read-only.",
   skills: [
     { id: "holycow-guide", title: "Guide", role: "coordinator", about: "Choose the next useful step." },
     { id: "holycow-init", title: "Init", role: "worker", about: "Understand and set up a repository." },

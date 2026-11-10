@@ -52,6 +52,46 @@ class HolyCow(unittest.TestCase):
         self.assertEqual(settings.worker_pick(self.s, {"skill": "holycow-guide"}), {"agent": "cursor", "model": "auto"})
         self.assertEqual(settings.worker_pick(self.s, {"skill": "hc-retro"}), settings.worker_pick(self.s, {"kind": "non-software"}))
 
+    def test_saved_skill_permissions_reach_each_cli_without_changing_worker_defaults(self):
+        for agent, perm, flags in (("claude", "acceptEdits", ["--permission-mode", "acceptEdits"]),
+                                   ("codex", "auto", ["-s", "workspace-write", "-a", "on-request"]),
+                                   ("cursor", "full", ["--force"])):
+            with self.subTest(agent=agent):
+                pick = {"agent": agent, "model": "skill-model", "perm": perm}
+                self.cfg["everywhere"]["holycow"]["hc-pr"] = pick
+                self.file.write_text(json.dumps(self.cfg))
+                self.assertEqual(settings.worker_pick(self.s, {"skill": "hc-pr"}), pick)
+                argv = settings.worker_argv(self.s, {"skill": "hc-pr"})
+                self.assertEqual(settings.argv_model(argv)[0], "skill-model")
+                self.assertEqual(argv[-len(flags):], flags)
+                self.assertEqual(settings.worker_pick(self.s, {"kind": "non-software"}), self.cfg["everywhere"]["worker"])
+
+    def test_pr_skill_reset_follows_worker_permissions_not_the_assistant(self):
+        role = self.cfg["everywhere"]["worker"]
+        role["perm"] = "manual"
+        self.cfg["everywhere"]["coordinator"] = {"agent": "claude", "model": "assistant-model", "perm": "bypassPermissions"}
+        self.file.write_text(json.dumps(self.cfg))
+        self.assertEqual(settings.worker_pick(self.s, {"skill": "hc-pr"}), role)
+        own = {"agent": "claude", "model": "pr-model", "effort": "medium", "fast": True, "perm": "auto"}
+        self.cfg["everywhere"]["holycow"]["hc-pr"] = own
+        self.file.write_text(json.dumps(self.cfg))
+        self.assertEqual(settings.worker_pick(self.s, {"skill": "hc-pr"}), own)
+        self.assertEqual(settings.worker_pick(self.s, {"skill": "hc-retro"}), role)
+        del self.cfg["everywhere"]["holycow"]["hc-pr"]
+        self.file.write_text(json.dumps(self.cfg))
+        self.assertEqual(settings.worker_pick(self.s, {"skill": "hc-pr"}), role)
+        self.assertNotIn("--dangerously-skip-permissions", settings.worker_argv(self.s, {"skill": "hc-pr"}))
+
+    def test_review_permission_stays_read_only_for_every_configured_cli(self):
+        for agent, full, restricted in (("claude", "bypassPermissions", "plan"), ("codex", "full", "read-only"), ("cursor", "full", "read-only")):
+            with self.subTest(agent=agent):
+                self.cfg["everywhere"]["holycow"]["hc-review"] = {"agent": agent, "model": "review-model", "perm": full}
+                self.file.write_text(json.dumps(self.cfg))
+                self.assertEqual(settings.worker_pick(self.s, {"skill": "hc-review"})["perm"], restricted)
+                argv = settings.worker_argv(self.s, {"skill": "hc-review"})
+                self.assertIn("ask" if agent == "cursor" else restricted, argv)
+                self.assertFalse(set(argv) & {"--force", "--dangerously-skip-permissions", "--dangerously-bypass-approvals-and-sandbox"})
+
     def install_skill(self, skill):
         p = self.root / "home/.agents/skills" / skill / "SKILL.md"
         p.parent.mkdir(parents=True, exist_ok=True); p.write_text("Skill instructions.")

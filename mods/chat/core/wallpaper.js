@@ -1,7 +1,7 @@
 // Desktop wallpaper preferences stay in this window's shared state, outside synced agent settings.
 export const WALLPAPER_KEY = "bossgoat.wallpaper";
 export const WALLPAPER_DIR = "data/bossgoat-wallpaper";
-export const DEFAULT_TRANSPARENCY = 0;
+export const DEFAULT_TRANSPARENCY = 50;
 export const DEFAULT_WALLPAPER = { path: "mods/chat/bossgoat-background.png", width: 1588, height: 991,
   transparency: DEFAULT_TRANSPARENCY, name: "bossgoat-background.png" };
 // HolyCow's website/src/styles/eden.css: paper surfaces, pastel accents and inverse ink tones.

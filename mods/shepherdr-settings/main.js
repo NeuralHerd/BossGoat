@@ -335,8 +335,15 @@ export default class ShepherdrSettings extends View {
     }
     for (const r of HOLYCOW.skills) {
       const own = eff.holycow[r.id];
-      const sel = own ?? this.roles[r.role]?.sel;
-      this.skills[r.id] = { sel: sel ? { ...sel } : null, data: this.data, saved: JSON.stringify(sel), unset: !own };
+      let sel = own ?? this.roles[r.role]?.sel;
+      let data = this.data;
+      if (r.id === "hc-review" && data) {
+        const mode = (a) => a === "claude" ? "plan" : "read-only";
+        if (sel) sel = { ...sel, perm: mode(sel.agent) };
+        data = { ...data, menus: Object.fromEntries(Object.entries(data.menus).map(([a, m]) => [a, { ...m, perms: m.perms.filter((p) => p.id === mode(a)) }])),
+          permDefault: Object.fromEntries(Object.keys(data.menus).map((a) => [a, mode(a)])) };
+      }
+      this.skills[r.id] = { sel: sel ? { ...sel } : null, data, saved: JSON.stringify(sel), unset: !own };
     }
   }
 
@@ -440,7 +447,7 @@ export default class ShepherdrSettings extends View {
     if (this.scope) {
       return sc.mine
         ? line.child(div().text_color(t.muted).child(CHANGED_HERE)).child(div().text_color(t.dim).child("·"))
-          .child(div().child(link(`reset-${sc.id}`, RESET, (_e, cx) => sc.reset(cx))))
+          .child(div().child(link(`reset-${sc.id}`, sc.id.startsWith("holycow-") ? HOLYCOW.reset : RESET, (_e, cx) => sc.reset(cx))))
         : line.child(div().text_color(t.dim).child(sc.from));
     }
     if (!sc.others?.length) return null;
@@ -500,6 +507,22 @@ export default class ShepherdrSettings extends View {
       .when(!this.scope, (el) => el.child(this.starRow(t, cx)));
   }
 
+  skillPermissions(t, c, locked) {
+    const sel = c?.sel, perms = c?.data?.menus?.[sel?.agent]?.perms ?? [];
+    if (!sel || !perms.length) return div();
+    const label = perms.find((p) => p.id === sel.perm)?.label ?? "CLI default";
+    return h_flex().id(`skill-permissions-${c.key}`).h(28).px(7).gap(5).items_center().rounded(7).text_size(12).text_color(t.muted)
+      .when(!locked, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => {
+          cx.stop_propagation();
+          openOverlay({ mod: "chat-models", kind: "popup", width: 260, height: 10 + 31 * perms.length,
+            props: { pick: "perm", key: c.key, options: perms, current: sel.perm, width: 260, height: 10 + 31 * perms.length } });
+        }))
+      .child(svg("mods/chat-models/shield.svg").size(14).flex_none())
+      .child(div().child(label))
+      .when(!locked, (el) => el.child(svg("mods/workspace-chrome/chevron-down.svg").size(12).flex_none()));
+  }
+
   holycow(t, cx) {
     for (const r of HOLYCOW.skills) {
       const c = this.skills[r.id];
@@ -515,14 +538,17 @@ export default class ShepherdrSettings extends View {
         div().text_size(TEXT.label).text_color(t.muted).child(HOLYCOW.policy)))
       .children(HOLYCOW.skills.map((r) => {
         const c = this.skills[r.id];
-        const control = h_flex().gap(8).items_center()
-          .child(c?.sel ? models.modelButton(t, c, {}, cx) : div().child(LOADING_AGENTS))
+        const control = v_flex().gap(4).items_end()
+          .child(h_flex().gap(8).items_center()
+            .child(c?.sel ? models.modelButton(t, c, {}, cx) : div().child(LOADING_AGENTS))
+            .child(this.skillPermissions(t, c, r.id === "hc-review")))
           .when(!this.scope && c && !c.unset, (el) => el.child(button(`follow-${r.id}`, HOLYCOW.follow,
             { kind: "plain", onClick: (_e, cx) => this.reset("holycow", r.id, cx) })));
         const role = ROLES.find((x) => x.id === r.role).title;
-        return this.row(t, r.title, `${r.id} · ${r.about}${c?.unset ? ` Follows ${role}.` : ""}`, control, this.scoped("holycow", r.id));
+        return this.row(t, r.title, `${r.id} · ${r.about}${c?.unset ? ` Follows ${role}.` : ""}${r.id === "hc-review" ? ` ${HOLYCOW.reviewPermissions}` : ""}`, control, this.scoped("holycow", r.id));
       }))
-      .child(div().pt(16).text_size(TEXT.label).text_color(t.dim).child(HOLYCOW.instructions));
+      .child(div().pt(16).text_size(TEXT.label).text_color(t.dim).child(this.scope ? HOLYCOW.resetAbout : HOLYCOW.followAbout))
+      .child(div().pt(8).text_size(TEXT.label).text_color(t.dim).child(HOLYCOW.instructions));
   }
 
   // Ask for a GitHub star (herdr-task's star.py), Everywhere only: a switch that turns it off before it ever shows;

@@ -39,7 +39,8 @@ test("cover fills a resized workspace without stretching the photo", () => {
 });
 
 
-test("fresh installations and reset use the bundled image without a local file selection", () => {
+test("fresh installations and reset show the bundled image at half transparency", () => {
+  expect(wallpaper().transparency).toBe(50);
   expect(wallpaper()).toEqual(DEFAULT_WALLPAPER);
   expect(wallpaper(null)).toEqual(DEFAULT_WALLPAPER);
   expect(wallpaper({ ...DEFAULT_WALLPAPER, path: "mods/chat/Warp_bg.png", name: "Warp_bg.png", transparency: 45 }))

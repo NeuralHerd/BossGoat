@@ -6,7 +6,7 @@ drops the space's own, and it inherits again. A few settings are one for every s
 
 ## Where you set them
 
-- **Settings, the level switch.** At the top of each page a space can set its own of (Agents, HolyCow Agents, Tasks, Autopilot,
+- **Settings, the level switch.** At the top of each page a space can set its own of (Agents, HolyCow, Tasks, Autopilot,
   Notify, Secrets): *Applies to: Everywhere ⌄*. The picker lists Everywhere, then every space by machine (a Find box
   once there are many). Pages that are one for every space (Machines, Window, Web) say so instead.
 - **A space's menu › Space settings…** opens Settings on that space, in the window and on the web.
@@ -129,7 +129,7 @@ then the space's own), without guessing (`herdr_task/assistant_settings.py`):
 ## BossGoat desktop background
 
 BossGoat includes `bossgoat-background.png` as its default background, so a new installation needs no file
-selection or download. Existing custom images remain selected. The default transparency is 0% (fully visible).
+selection or download. Existing custom images remain selected. The default transparency is 50%; saved image transparency is preserved.
 
 In the desktop sidebar, open **BossGoat → Appearance → Background** and select **Solid colour** or **Image**.
 Solid colours use HolyCow’s [Eden palette](https://github.com/NeuralHerd/HolyCow/blob/main/website/src/styles/eden.css):
@@ -156,17 +156,17 @@ The macOS picker uses Apple’s Command Line Tools. Linux uses the desktop porta
 GdkPixbuf, as the chat attachment picker does.
 
 
-## HolyCow Agents
+## HolyCow
 
 Install the [HolyCow skills](https://github.com/NeuralHerd/HolyCow) on each machine that runs them.
-**HolyCow Agents → Skill assignment** is **Required for software tasks**. The Assistant uses HolyCow's guide
+**HolyCow → Skill assignment** is **Required for software tasks**. The Assistant uses HolyCow's guide
 to select the relevant skill automatically; there is no mandatory sequence and routine questions need no skill task.
 The old Use HolyCow switch no longer disables this requirement, including in settings files saved with it off.
 
 Guide, Init, Compass, Refine, Lab, Plan, Build, Review, PR and Retro each have their own Claude Code, Codex or
-Cursor model picker, including the selected CLI's reasoning and speed options. Choices inherit from Everywhere
-unless a space sets its own. **Use role model** removes a global skill choice; a space's **Reset** restores
-inheritance. Unset Guide tasks follow Assistant, Review follows Reviewer, and the others follow Workers.
+Cursor model picker, including the selected CLI's reasoning, speed and permission options. Permissions are also shown beside each skill's model. Choices inherit from Everywhere
+unless a space sets its own. **Use role defaults** removes the complete global skill choice, including permissions; a space's **Reset to inherited settings** restores
+its inherited choice. The running Assistant's chat permissions do not change these task defaults. Unset Guide tasks follow Assistant, Review follows Reviewer, and the others follow Workers.
 Guide's picker controls delegated Guide tasks, not the already-running Assistant.
 
 The Assistant creates work with `herdr-task add "Title" --skill hc-build --prompt "Scope and evidence"` (or another
