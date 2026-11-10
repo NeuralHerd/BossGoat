@@ -26,8 +26,8 @@ State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 | First row, log read from its start | W:2673 "Start of conversation" | R:211 HeadRow (D `top`) | ✓ |
 | First row, earlier pages left | W:2675 "Loading earlier…", loads on scrolling up (W loadEarlier) | R:211 HeadRow, loads when scrolled up to it (D `earlier`, action `earlier` → service/chats.ts `earlier()`) | ✓ |
 | Day line | W:2737 Today, Yesterday, weekday, "Tue 20 Oct" (+ year) | C:888 DateLine, `dayLabel` from core | ✓ (was the browser's locale format) |
-| Your message | W:2679 bubble on the right, accent tint | C:50 Bubble, right, `bg-reply` | ✓ (2.1's bubble look) |
-| Agent's message, markdown | W:2715 bubble on the left | C:50 Bubble, left, Markdown | ✓ |
+| Your message | Neutral bubble on the right, no full-row background | Bubble, right, neutral `bg-reply` | ✓ |
+| Agent's message, markdown | Plain text and Markdown without a message card; configured wallpaper retained | Unboxed Markdown in the same reading column | ✓ |
 | Agent's code block | W:2717 bar: language or "code", Copy / Copied | markdown.tsx toHtml: `.code-head` with language or "code" and Copy / Copied | ✓ |
 | Long reply folds | W FOLD 20 lines past 28, "Show more" / "Show less" with chevron | fold.tsx: past 28×21px to 20×21px, WORDS.showMore / showLess | ✓ |
 | Reply line over a reply | W:2690 reply icon + its start, dim, one line; a press scrolls to it and lights it | R:84 ReplyLine; D finds the message it names (core `names`), a press jumps to it | ✓ (was a tucked quote bubble) |
@@ -92,6 +92,7 @@ State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 |---|---|---|---|
 | Placeholder | W:2547 "Message the Assistant", "Message SHEP-7", "Message Claude Code"; "Reply instead…" while a card or the terminal asks | C:2528 placeholderOf (incl. `blocked`) | ✓ |
 | Attach | W:3286 paperclip "Attach files" → the file picker | C:1838 paperclip "Attach files" → the file picker; a phone gets a menu with its camera | ◇ phone camera |
+| Permissions | Beside Attach: current mode; a focused picker applies it with an explicit Restart. Before launch, changes the chat's pending choice | Beside Attach: current mode; same focused picker and explicit Restart for a running agent | ◇ fresh web chats use the existing launch defaults |
 | Pasted / dropped files | W tiles over the box, × each | C:2024 Attachments | ✓ |
 | Model button | W:3199 "Opus 5.5 · High ⌄" in the box's bottom row, a narrow chat drops "· 1M" | S:384 AgentLine: the same words (D `agent.words`) with a chevron, under the box | ◇ 2.1's one-row box: the button sits under it |
 | /model | W:2225 opens the picker, the named model chosen | C /model → `openModelMenu(chat, name)` | ✓ |

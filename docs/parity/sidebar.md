@@ -11,6 +11,8 @@ Shared, so the two can't drift: `core/menus.js` (every sidebar menu, Notify's no
 `core/machines.test.js`), `core/spaces.js` (a row's git tail, `tilde` and `sharedNames` for two spaces with one name,
 a deleted section's toast and its Undo: `core/spaces.test.js`). The window's mods read them as the web does.
 
+Common saved section and space emoji use matching monochrome outline icons through `core/sidebar-icons.js`; custom emoji remain unchanged. Projects without a custom icon use an outline chat icon. Saved names, icons and ordering are unchanged.
+
 State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 
 ## Brand row and foot

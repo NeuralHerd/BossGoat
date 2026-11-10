@@ -29,8 +29,16 @@ import { countBadge, red, green, H, TEXT, RADIUS, toast } from "./ui.js";
 import { on as addonOn } from "./addons.js";
 import { spaceName, gitTail, tilde, sharedNames, inOrder, withOrder } from "./core/spaces.js";
 import { coordinatorTab } from "./coordinator.js";
+import { sidebarIcon } from "./core/sidebar-icons.js";
 
 const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup };
+
+function sidebarGlyph(value, fallback) {
+  const icon = sidebarIcon(value) ?? (!value ? fallback : null);
+  if (!icon) return div().text_size(14).child(value);
+  const folder = ["monitor", "server", "settings", "folder"].includes(icon) ? "workspace-chrome" : "spaces-chat";
+  return svg(`mods/${folder}/${icon}.svg`).size(16);
+}
 
 // Spaces with agents showing as a chat counted in their status.
 const spaces = spacesWithChats;
@@ -454,10 +462,8 @@ export default class Spaces extends View {
         .on_mouse_move((_e, cx) => this.drag(`top:${m}`, m, cx))
         .on_mouse_down("right", (e) => openMenu("machine", { machine: m, row: rectOf(e) }))
         .when(out, el => el.child(this.line(t, "bottom")))
-        // Its emoji, or the server / monitor; and the name it was given (Rename), else its own.
-        .child(machineLook(m).icon
-          ? div().w(14).flex_none().flex().justify_center().text_size(12).when(offline, el => el.opacity(0.5)).child(machineLook(m).icon)
-          : svg(`mods/workspace-chrome/${m ? "server" : "monitor"}.svg`).size(14).flex_none().text_color(offline ? t.dim : t.muted))
+        .child(div().w(18).flex_none().flex().items_center().justify_center().text_color(offline ? t.dim : t.muted)
+          .when(offline, el => el.opacity(0.5)).child(sidebarGlyph(machineLook(m).icon, m ? "server" : "monitor")))
         .when(!collapsed, el => el.child(div().flex_1().min_w(0).truncate().child(machineLook(m).name))
           .when(offline, el => el.child(div().flex_none().font_normal().child(state === "connecting" ? "Connecting\u2026" : "Offline")))
           // + (New space or New section, there) hugging its one meter. HERD-70.
@@ -551,16 +557,15 @@ export default class Spaces extends View {
       .on_click(() => foldSection(s.id))
       .on_mouse_down("right", (e) => openMenu("section", { section: s.id, row: rectOf(e) }))
       .on_mouse_move((_e, cx) => this.drag(`section:${s.id}`, s.machine, cx))
-      // Its icon in the spaces' "#" column: the folder, or the emoji picked for it.
-      .child(div().w(18).flex_none().flex().justify_center()
-        .child(s.icon ? div().text_size(13).child(s.icon) : svg("mods/workspace-chrome/folder.svg").size(14)))
+      .child(div().w(18).flex_none().flex().items_center().justify_center()
+        .child(sidebarGlyph(s.icon, "folder")))
       .child(div().flex_1().min_w(0).truncate().child(s.name))
       .when(needs > 0 || ready > 0, (el) => el.child(countBadge(needs, ready, t.chrome)))
       .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none())
       .when(line, (el) => el.child(this.line(t, "bottom")));
   }
 
-  // A section's or Pinned's heading, inside its machine: its icon in the spaces' "#" column and its
+  // A section's or Pinned's heading, inside its machine: its icon in the spaces' icon column and its
   // name where theirs start (so it reads as one of the machine's), 12, medium, dim.
   groupHead(id, t) {
     return h_flex().relative().id(id).h(28).flex_none().px(8).gap(9).items_center().rounded(RADIUS.card)
@@ -734,10 +739,8 @@ export default class Spaces extends View {
           .gap(9)
           .items_center()
           .when(Boolean(tree), el => el.pl(22).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
-          // Slack's channels: a quiet # and the name, bright when it's the shown space.
-          // Or the emoji picked for it (Change icon), in the same slot so names stay aligned.
-          .when(!tree, el => el.child(div().w(18).flex_none().text_center().text_size(iconOf(w.id) ? 14 : 15).text_color(fresh ? t.foreground : w.active && !quiet ? t.muted : t.dim)
-            .when(quiet && Boolean(iconOf(w.id)), (el) => el.opacity(0.5)).child(iconOf(w.id) ?? "#")))
+          .when(!tree, el => el.child(div().w(18).flex_none().flex().items_center().justify_center().text_color(fresh ? t.foreground : w.active && !quiet ? t.muted : t.dim)
+            .when(quiet && Boolean(iconOf(w.id)), (el) => el.opacity(0.5)).child(sidebarGlyph(iconOf(w.id), "message-square"))))
           .child(nameText(name, fresh, quiet ? t.dim : w.active ? t.foreground : t.muted, t))
           .when(Boolean(this.pilotMark(w, t)), (el) => el.child(this.pilotMark(w, t)))
           .child(g ? this.gitTail(g, tree, name, t, label) : h_flex().flex_1().min_w(0).justify_end().text_size(TEXT.label).text_color(t.dim)
