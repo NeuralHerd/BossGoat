@@ -21,8 +21,10 @@ place, never overwrites what you made yourself, and keeps a backup of anything i
 git clone https://github.com/NeuralHerd/BossGoat && cd BossGoat
 ./install.sh --dry-run      # what it would do; nothing is written
 ./install.sh                # do it
-shepherdr doctor            # check it
+bossgoat doctor            # check it
 ```
+
+The installer adds `bossgoat` to `~/.local/bin`. The `shepherdr` command remains a compatibility alias; existing storage paths and services keep their names. Make sure `~/.local/bin` is on your PATH.
 
 Then in Herdr, `Ctrl+Shift+L` picks the `BossGoat` layout.
 
@@ -34,7 +36,7 @@ theme choices and other saved preferences carry over:
 ```bash
 herdr-app do layout.clone '{"name":"shepherdr","as":"BossGoat"}'
 ./install.sh --adopt --keys keep
-shepherdr doctor
+bossgoat doctor
 ```
 
 Skip the copy if `BossGoat` already exists. The installer backs up the clone before installing
@@ -72,7 +74,7 @@ helper copy from an older release that doctor rejects (no current SHEP block) is
 What it backs up: anything it replaces or removes, in `~/.config/herdr-app/.shepherdr-backup/<time>/`, at the same
 path under your home.
 
-Last, it checks the install is whole (what `shepherdr doctor` checks). When it isn't, the update says `NOT DONE` with
+Last, it checks the install is whole (what `bossgoat doctor` checks). When it isn't, the update says `NOT DONE` with
 each `✗` reason, and doctor keeps failing until they're fixed.
 
 What it refuses: a mod, layout, lib or bin file by the same name that it didn't install and that differs (your own
@@ -82,14 +84,14 @@ mod called `chat`, say). Nothing is written then; it names each one. `--adopt` b
 
 Each task's browser runs [agent-browser](https://github.com/vercel-labs/agent-browser). Shepherdr pins a version
 (0.41.1) and works with any newer 0.41.x too: one you already have on the PATH (npm, Homebrew…) is used as it is, unless Shepherdr has its own copy here.
-When there's none, or it's another version, install, `shepherdr update` and an agent's first `herdr-browser` command
+When there's none, or it's another version, install, `bossgoat update` and an agent's first `herdr-browser` command
 install Shepherdr's own copy: agent-browser's release binary for this machine (macOS or Linux, x64 or arm64), checked
 against the pinned version's checksum, into `~/.local/share/shepherdr/agent-browser/<version>/`. No npm, no sudo,
 nothing global. When Chrome isn't found it runs `agent-browser install` for Chrome for Testing. A new pin in an
-update installs the new version and removes the old copy; `shepherdr uninstall` removes it.
+update installs the new version and removes the old copy; `bossgoat uninstall` removes it.
 
 When it can't (offline, no `curl`, a download that isn't the release), the Browser tab, `herdr-browser` and
-`shepherdr doctor` say why, in full, with the one command that fixes it:
+`bossgoat doctor` say why, in full, with the one command that fixes it:
 
 ```bash
 herdr-browser --install    # install or repair agent-browser and Chrome now, and say what it found
@@ -107,11 +109,11 @@ herdr-core and the web app alone: no Herdr app, its spaces are the service's own
 ```bash
 git clone https://github.com/NeuralHerd/BossGoat && cd BossGoat
 ./install.sh --web          # the service, the web app, herdr-task and the helpers
-shepherdr doctor            # check it
-shepherdr web status        # where it's served: https://<this machine's tailnet name>/shepherdr/
+bossgoat doctor            # check it
+bossgoat web status        # where it's served: https://<this machine's tailnet name>/shepherdr/
 ```
 
-It shares itself on your tailnet only (`tailscale serve`, never Funnel). `shepherdr update` keeps it web only.
+It shares itself on your tailnet only (`tailscale serve`, never Funnel). `bossgoat update` keeps it web only.
 
 ## Options
 
@@ -119,13 +121,13 @@ It shares itself on your tailnet only (`tailscale serve`, never Funnel). `shephe
 ./install.sh [--root DIR] [--dry-run] [--adopt] [--guard] [--keys ask|keep|ours] [--no-hooks] [--no-build] [--yes] [--force]
              [--port N] [--https-port N]
 ./install.sh --web    the web app alone, without the Herdr window
-shepherdr update      the same kind again (layout, or web only), from the checkout it was installed from (git pull it first)
-shepherdr uninstall   [--root DIR] [--dry-run]: takes out what it installed and puts back what it replaced
-shepherdr doctor      [--root DIR]: checks files, links, shared copies, herdr-task and the programs it needs, agent-browser, and says how to update
+bossgoat update      the same kind again (layout, or web only), from the checkout it was installed from (git pull it first)
+bossgoat uninstall   [--root DIR] [--dry-run]: takes out what it installed and puts back what it replaced
+bossgoat doctor      [--root DIR]: checks files, links, shared copies, herdr-task and the programs it needs, agent-browser, and says how to update
 ```
 
 `--port N` moves the service off `127.0.0.1:7788`; `--https-port N` shares the web app on the tailnet's port N instead
-of 443, when something else here holds 443 (`shepherdr web https-port N` changes it later; [Web](web.md)). Updates keep both.
+of 443, when something else here holds 443 (`bossgoat web https-port N` changes it later; [Web](web.md)). Updates keep both.
 
 `--root DIR` installs under another folder instead of your home (it mirrors `.config/herdr-app`, `.local/bin`,
 `.config/herdr-core/templates`, `.claude`, `.codex`): a scratch try you can look through and diff. It never starts
@@ -135,7 +137,7 @@ Herdr there.
 
 Nothing to install by hand. herdr-task copies itself, `herdr-artifact`, `herdr-secret`, `herdr-browser` and the role
 instructions to every connected machine (`herdr-task machines sync --check` shows what it would do). While an install
-or update replaces one of those, `a sync hold (`sync-hold` in `~/.local/state/shepherdr`)` stops every copy to another machine until `shepherdr doctor`
+or update replaces one of those, `a sync hold (`sync-hold` in `~/.local/state/shepherdr`)` stops every copy to another machine until `bossgoat doctor`
 finds the install whole: the scheduler's sync, `herdr-task machines sync` (it says "held"), herdr-task's and
 herdr-artifact's own copy when they run a command there (the copy already there runs instead), and
 `herdr-secret install --on`. So a half-done copy never reaches every machine. Turning the Other machines add-on off stops the
@@ -143,7 +145,7 @@ sync too.
 
 ## Where your data lives
 
-Shepherdr keeps its own data in its own folders, never under Herdr's name (`shepherdr where` prints every path):
+Shepherdr keeps its own data in its own folders, never under Herdr's name (`bossgoat where` prints every path):
 
 ```text
 ~/.config/shepherdr/          settings.json (Shepherdr settings), model-picks.json
@@ -166,7 +168,7 @@ install or update moves it ([Upgrading](upgrading.md)).
 
 ## Uninstall
 
-`shepherdr uninstall` removes the files it installed that you haven't changed (a mod you changed stays whole), its
+`bossgoat uninstall` removes the files it installed that you haven't changed (a mod you changed stays whole), its
 keys (putting back any it replaced), links, guard and hooks, and puts back what the install replaced. Your Herdr
-`data/`, Shepherdr's data folders (tasks, worktrees, artifacts, secrets, settings: `shepherdr where`) and your own mods stay. Switch Herdr to another
+`data/`, Shepherdr's data folders (tasks, worktrees, artifacts, secrets, settings: `bossgoat where`) and your own mods stay. Switch Herdr to another
 layout first if Shepherdr's is showing.

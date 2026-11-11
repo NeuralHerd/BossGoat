@@ -11,10 +11,10 @@ never the open internet); or the always-on machine you serve it from (below). Sh
 running here; without it the service still runs, with no web app.
 
 Another HTTPS port: when something else on this machine already holds the tailnet's 443 (a reverse proxy, a container
-publishing 443, a `tailscale serve --tcp 443` forward), `shepherdr web https-port 8443` moves it to
+publishing 443, a `tailscale serve --tcp 443` forward), `bossgoat web https-port 8443` moves it to
 `https://<this machine's tailnet name>:8443/shepherdr/` within seconds, and every link Shepherdr gives follows
-(`./install.sh --https-port 8443` sets it at install; updates keep it; `shepherdr web https-port 443` goes back, and
-`shepherdr web https-port` alone says the one now). When sharing fails, Settings → Web and `shepherdr doctor` say
+(`./install.sh --https-port 8443` sets it at install; updates keep it; `bossgoat web https-port 443` goes back, and
+`bossgoat web https-port` alone says the one now). When sharing fails, Settings → Web and `bossgoat doctor` say
 tailscale's own reason, and name a free port when the one asked for is taken. A port is this machine's own: Serve from
 another machine uses that machine's.
 
@@ -103,7 +103,7 @@ connection it came on). A page from anywhere else can't change anything: writes 
 
 `./install.sh` installs the window's layout and the web app. `./install.sh --web` installs the web app alone (no
 Herdr window): its spaces are the service's own. Either builds the web app from a fresh clone (with Bun, installed
-from bun.sh if it's missing), and `shepherdr update` updates the same kind. Shepherdr settings → Window → Add-ons → Web turns the web app off
+from bun.sh if it's missing), and `bossgoat update` updates the same kind. Shepherdr settings → Window → Add-ons → Web turns the web app off
 and on; the service keeps its background work either way.
 
 ## Serve from an always-on machine
@@ -113,12 +113,12 @@ machine linked over herdr-core (`hc machine add`, or Add machine in the sidebar)
 
 - **Shepherdr settings → Web → Serve from**, in the window or the web app: this computer and every linked machine, with
   its system and Offline when it is. Pick one and confirm; to move it back, pick This computer.
-- Or from a terminal: `shepherdr web serve-from <machine>` (`here` moves it back), `shepherdr web status`. Its
+- Or from a terminal: `bossgoat web serve-from <machine>` (`here` moves it back), `bossgoat web status`. Its
   `/shepherdr` already shared to something else there: `--take-link` sets that aside, and moving away puts it back.
 
 What a move does, in order: installs Shepherdr's web service on that machine over the link, or brings it up to date
 (`~/.local/share/shepherdr`, under launchd on macOS or a systemd user unit on Linux; Bun from bun.sh when it has
-none; what it replaces is backed up and `shepherdr uninstall` there puts it back), copies the pins, sidebar, Notify,
+none; what it replaces is backed up and `bossgoat uninstall` there puts it back), copies the pins, sidebar, Notify,
 settings and role instructions over, then tells every machine. The new one shares
 `https://<its tailnet name>/shepherdr/` (127.0.0.1 only, never Funnel), the old one stops sharing its link, and
 Settings → Web shows the new link and its QR code everywhere. It needs Python 3.8+, herdr-core and Tailscale there.

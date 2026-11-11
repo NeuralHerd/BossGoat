@@ -73,7 +73,7 @@ Left to right, on the theme's `canvas` background, no title bar:
 
 - Install it with `./install.sh` from this repo, not by copying the folders: the helpers in `bin/`, `lib/`, the
   templates and the hooks are outside `mods/`, and the installer links them, merges `keys.json` (asking before it
-  replaces a key you use), backs up what it replaces and records what it put there (`shepherdr uninstall` takes it
+  replaces a key you use), backs up what it replaces and records what it put there (`bossgoat uninstall` takes it
   back out). `./install.sh --dry-run` shows everything first.
 - Mod names are fixed (`chat`, `tasks`, …): their state in `data/<mod>` and pane names follow them. The installer
   refuses a folder by the same name that isn't BossGoat's.
@@ -85,7 +85,7 @@ Left to right, on the theme's `canvas` background, no title bar:
 
 ## Done when
 
-- `shepherdr doctor` says "whole", and `bin/sync-shared --check` passes.
+- `bossgoat doctor` says "whole", and `bin/sync-shared --check` passes.
 - Ctrl+Shift+L shows the BossGoat layout: the sidebar lists your spaces by machine, the tab bar has Tasks and
   Artifacts, the status bar shows the machine.
 - A new space's Assistant opens as a chat; asking it for a task adds a row under Working in Tasks with a pie dot,

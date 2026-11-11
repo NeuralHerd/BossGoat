@@ -120,6 +120,44 @@ class Install(unittest.TestCase):
         self.assertEqual(keys["layout:shepherdr"]["f2"], "mine.rename")
         self.assertTrue(os.path.exists(state))
 
+    def test_bossgoat_alias_keeps_legacy_updates_working(self):
+        run("install", "--root", self.root, "--yes")
+        for name in ("bossgoat", "shepherdr"):
+            command = self.p(".local/bin", name)
+            self.assertEqual(os.path.realpath(command), self.p(APP, "bin/shepherdr"))
+            result = subprocess.run([sys.executable, command, "version"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "bossgoat 3.1.30")
+        command = self.p(".local/bin/bossgoat")
+        help_result = subprocess.run([sys.executable, command, "--help"], capture_output=True, text=True)
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("usage: bossgoat", help_result.stdout)
+        doctor = subprocess.run([sys.executable, command, "doctor", "--root", self.root], capture_output=True, text=True)
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+        os.unlink(command)
+        record = Path(self.p(APP, "data/shepherdr/installed.json"))
+        installed = json.loads(record.read_text())
+        del installed["links"]["bossgoat"]
+        record.write_text(json.dumps(installed))
+        legacy = subprocess.run([sys.executable, self.p(".local/bin/shepherdr"), "update", "--root", self.root,
+                                 "--yes", "--no-build"], capture_output=True, text=True)
+        self.assertEqual(legacy.returncode, 0, legacy.stdout + legacy.stderr)
+        self.assertTrue(os.path.islink(command), "updating an older installation must add the BossGoat command")
+        removed = subprocess.run([sys.executable, command, "uninstall", "--root", self.root], capture_output=True, text=True)
+        self.assertEqual(removed.returncode, 0, removed.stdout + removed.stderr)
+        for name in ("bossgoat", "shepherdr"):
+            self.assertFalse(os.path.lexists(self.p(".local/bin", name)))
+
+    def test_bossgoat_alias_restores_an_existing_command_on_uninstall(self):
+        command = Path(self.p(".local/bin/bossgoat"))
+        command.parent.mkdir(parents=True)
+        command.write_text("the existing command\n")
+        run("install", "--root", self.root, "--yes")
+        self.assertTrue(command.is_symlink())
+        run("uninstall", "--root", self.root)
+        self.assertFalse(command.is_symlink())
+        self.assertEqual(command.read_text(), "the existing command\n")
+
     def test_install_again_update_uninstall(self):
         os.makedirs(self.p(".codex"))
         out = run("install", "--root", self.root, "--yes").stdout
@@ -502,6 +540,12 @@ class Install(unittest.TestCase):
             share = os.path.join(root, ".local/share/shepherdr")
             self.assertFalse(os.path.exists(os.path.join(root, APP)))
             self.assertTrue(os.path.isfile(os.path.join(share, "service/main.ts")))
+            for name in ("bossgoat", "shepherdr"):
+                self.assertEqual(os.path.realpath(os.path.join(root, ".local/bin", name)), os.path.join(share, "bin/shepherdr"))
+            updated = subprocess.run([sys.executable, os.path.join(root, ".local/bin/bossgoat"), "update", "--root", root,
+                                      "--yes", "--no-build", "--force"], capture_output=True, text=True)
+            self.assertEqual(updated.returncode, 0, updated.stdout + updated.stderr)
+            self.assertFalse(os.path.exists(os.path.join(root, APP)), "the alias must preserve a web-only installation")
             self.assertEqual(os.path.realpath(os.path.join(root, ".local/bin/herdr-task")), os.path.realpath(os.path.join(share, "mods/tasks/bin/herdr-task")))
             self.assertTrue(os.path.isfile(os.path.join(share, "mods/artifacts/recipe-view.js")))
             # SHEP-181: restarting an Assistant from the web needs no window layout
@@ -513,7 +557,11 @@ class Install(unittest.TestCase):
                                env={**os.environ, "HOME": root})
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertIn("recipe", p.stdout)
-            run("uninstall", "--root", root)
+            removed = subprocess.run([sys.executable, os.path.join(root, ".local/bin/bossgoat"), "uninstall", "--root", root],
+                                     capture_output=True, text=True)
+            self.assertEqual(removed.returncode, 0, removed.stdout + removed.stderr)
+            for name in ("bossgoat", "shepherdr"):
+                self.assertFalse(os.path.lexists(os.path.join(root, ".local/bin", name)))
             self.assertFalse(os.path.exists(os.path.join(share, "service/main.ts")))
             self.assertFalse(os.path.lexists(os.path.join(root, ".local/bin/herdr-task")))
         finally:
@@ -598,7 +646,7 @@ class Install(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(share, "service/main.ts")))
             self.assertFalse(os.path.exists(os.path.join(root, APP)), "a web-only update doesn't install the layout")
             self.assertIn("to update:", run("doctor", "--root", root).stdout)
-            self.assertIn("shepherdr update", run("doctor", "--root", root).stdout)
+            self.assertIn("bossgoat update", run("doctor", "--root", root).stdout)
             # installed from a copy that's gone since: no update from the installed folder itself
             tarfile.open(fileobj=io.BytesIO(sh.pack(ROOT))).extractall(src)
             run("install", "--web", "--root", root, "--source", src, "--yes", "--force")
@@ -639,14 +687,14 @@ class Install(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
 
     def test_update_runs_the_new_installer(self):
-        """`shepherdr update` is the installed (old) copy: after a release it hands over to the source's installer, so
+        """`bossgoat update` is the installed (old) copy: after a release it hands over to the source's installer, so
         one run records the new version (SHEP-28 had to run it twice)."""
         src = tempfile.mkdtemp(prefix="shepherdr-src-")
         try:
             s = os.path.join(src, "s")
             shutil.copytree(ROOT, s, ignore=shutil.ignore_patterns(".git", "node_modules"))
             run("install", "--root", self.root, "--source", s, "--yes")
-            installed = self.p(APP, "bin/shepherdr")
+            installed = self.p(".local/bin/bossgoat")
             self.assertTrue(os.path.isfile(installed))
             # the release: a new version in the source, the installed copy still the old one
             new = os.path.join(s, "bin/shepherdr")
@@ -657,7 +705,7 @@ class Install(unittest.TestCase):
             p = subprocess.run([sys.executable, installed, "update", "--root", self.root, "--yes", "--no-build"],
                                capture_output=True, text=True, stdin=subprocess.DEVNULL)
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-            self.assertIn("Shepherdr 9.9.9 update", p.stdout)
+            self.assertIn("BossGoat 9.9.9 update", p.stdout)
             self.assertEqual(json.load(open(self.p(APP, "data/shepherdr/installed.json")))["version"], "9.9.9")
             # now the same installer: it runs itself
             p = subprocess.run([sys.executable, installed, "update", "--root", self.root, "--yes", "--no-build"],

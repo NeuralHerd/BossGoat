@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
-"""Shepherdr's installer: puts the BossGoat layout, its mods and helpers into a Herdr app home.
+"""BossGoat's installer: puts the BossGoat layout, its mods and helpers into a Herdr app home.
 
-  shepherdr install    [--root DIR] [--adopt] [--guard] [--keys ask|keep|ours] [--no-hooks] [--dry-run] [--yes]
+  bossgoat install    [--root DIR] [--adopt] [--guard] [--keys ask|keep|ours] [--no-hooks] [--dry-run] [--yes]
                        [--port N]: the service's port on 127.0.0.1 when another app holds 7788 (updates keep it)
                        [--https-port N]: the tailnet HTTPS port the web app is shared on, when something else holds 443
-  shepherdr update     the same, from the checkout it was installed from (git pull it first); web only too
+  bossgoat update     the same, from the checkout it was installed from (git pull it first); web only too
   (a fresh clone has no web app built: install and update build it with Bun, installing Bun first when it's missing)
-  shepherdr install --web               web only: herdr-core, herdr-task, the helpers, the service and the web app
+  bossgoat install --web               web only: herdr-core, herdr-task, the helpers, the service and the web app
                                         under .local/share/shepherdr (no herdr-app)
-  shepherdr web serve-from <machine|here> [--take-link]   serve the web app from another machine linked over
+  bossgoat web serve-from <machine|here> [--take-link]   serve the web app from another machine linked over
                                         herdr-core (an always-on Mac mini or cloud VM), installing it there; here: back
-  shepherdr web status                  which machine serves it, and its link
-  shepherdr web https-port [N]          the tailnet HTTPS port this machine shares the web app on (default 443): another
+  bossgoat web status                  which machine serves it, and its link
+  bossgoat web https-port [N]          the tailnet HTTPS port this machine shares the web app on (default 443): another
                                         one when something else here holds 443; no N: the one now
-  shepherdr secrets move-to <machine|here> [--restore]   the machine that keeps the secrets (the vault agents use by
+  bossgoat secrets move-to <machine|here> [--restore]   the machine that keeps the secrets (the vault agents use by
                                         name): moves them there, with a backup on both; --restore: the old one takes its
                                         backup back when the other is gone for good
-  shepherdr secrets where               which machine keeps them
-  shepherdr uninstall  [--root DIR] [--dry-run]
-  shepherdr doctor     [--root DIR]: checks the install; once it's whole, lets the sync to other machines go
-  shepherdr version
+  bossgoat secrets where               which machine keeps them
+  bossgoat uninstall  [--root DIR] [--dry-run]
+  bossgoat doctor     [--root DIR]: checks the install; once it's whole, lets the sync to other machines go
+  bossgoat version
 
 What goes where (each under --root, default your home):
   .config/herdr-app/mods/<mod>          the add-ons' mods (lib/addons.json lists them), one swap per mod
   .config/herdr-app/layouts/BossGoat.json, lib/, core/, bin/
   .config/herdr-app/keys.json           our keys merged in: free ones added, a key you use asked about first
   .config/herdr-core/templates/*.md     the Assistant's, worker's and reviewer's instructions
-  .local/bin/{herdr-task,herdr-artifact,herdr-secret,herdr-browser,shepherdr}   links into the above
+  .local/bin/{herdr-task,herdr-artifact,herdr-secret,herdr-browser,bossgoat,shepherdr}   links into the above
   .local/bin/herdr-app                  with --guard: a guard that refuses a window with another home
   .local/share/shepherdr/               the Shepherdr service (service/, core/) and the built web app (web/dist)
   .config/systemd/user/shepherdr.service    Linux: keeps the service running (systemctl --user)
@@ -40,16 +40,16 @@ install (the new copy goes beside it as <file>.new; a mod file Shepherdr changed
 recorded in .config/herdr-app/data/shepherdr/installed.json (a sha256 per file), so running it again
 changes only what changed. While it replaces a helper or template, a sync hold (sync-hold in
 Shepherdr's state folder, and .herdr/sync-hold for older helpers) keeps herdr-task from sending them
-to other machines until `shepherdr doctor` finds the install whole.
+to other machines until `bossgoat doctor` finds the install whole.
 
 Shepherdr's own data (tasks, artifacts, settings, secrets, browsers, the service's files) lives in its
 own folders: ~/.config/shepherdr, ~/.local/share/shepherdr, ~/.local/state/shepherdr, ~/.cache/shepherdr
 (SHEPHERDR_HOME or XDG_* move them). install and update move it there from ~/.herdr once, leaving links at
 the old paths (mods/tasks/bin/herdr_task/layout.py):
-  shepherdr where                     every path in use, and the move's state
-  shepherdr migrate [--dry-run]       the move now (install, update and herdr-task do it by themselves)
-  shepherdr migrate --rollback        everything back to ~/.herdr (for an older Shepherdr); `migrate` moves again
-  shepherdr migrate --cleanup-legacy  remove the old paths' links, once no machine runs an older Shepherdr
+  bossgoat where                     every path in use, and the move's state
+  bossgoat migrate [--dry-run]       the move now (install, update and herdr-task do it by themselves)
+  bossgoat migrate --rollback        everything back to ~/.herdr (for an older Shepherdr); `migrate` moves again
+  bossgoat migrate --cleanup-legacy  remove the old paths' links, once no machine runs an older Shepherdr
 """
 
 import argparse
@@ -120,7 +120,7 @@ def move_data(r, a, home):
     try:
         res = L.migrate(home=r.root, env=None if home else {}, dry=a.dry_run)
     except Exception as e:  # a lock held, a full disk: the data stays on the old paths, still working
-        r.notes.append(f"Shepherdr's data stays in ~/.herdr for now ({e}); `shepherdr migrate` tries again")
+        r.notes.append(f"Shepherdr's data stays in ~/.herdr for now ({e}); `bossgoat migrate` tries again")
         return
     if a.dry_run:
         if res["moved"]:
@@ -133,7 +133,7 @@ def move_data(r, a, home):
         r.notes.append(n)
 # Helpers on the PATH: their name, and where the link leads (under the app home).
 LINKS = {"herdr-task": "mods/tasks/bin/herdr-task", "herdr-artifact": "mods/artifacts/bin/herdr-artifact",
-         "herdr-secret": "bin/herdr-secret", "herdr-browser": "bin/herdr-browser", "shepherdr": "bin/shepherdr"}
+         "herdr-secret": "bin/herdr-secret", "herdr-browser": "bin/herdr-browser", "bossgoat": "bin/shepherdr", "shepherdr": "bin/shepherdr"}
 # Written by Herdr into each mod (editor types): never ours, never touched.
 GENERATED = {"gpui-kit.d.ts", "jsconfig.json"}
 SKIP = {"__pycache__", ".DS_Store"}
@@ -368,7 +368,7 @@ def source_items(src):
 
 def service_items(src):
     """The service (its TypeScript runs on Bun as it is), the shared core and the built web app; and what makes that
-    folder a source for a web-only install on another machine (Serve from: `shepherdr web install-on` packs it)."""
+    folder a source for a web-only install on another machine (Serve from: `bossgoat web install-on` packs it)."""
     items = [("service", f"{SHARE}/package.json", os.path.join(src, "package.json")),
              # which add-ons the web app leaves out while off (Settings › Window)
              ("service", f"{SHARE}/lib/addons.json", os.path.join(src, "lib", "addons.json"))]
@@ -554,7 +554,7 @@ def write_https_port(root, p, dry=False):
 
 
 def set_https_port(a, root):
-    """install --https-port: kept in the service's folder, so updates keep it and `shepherdr web https-port` changes it."""
+    """install --https-port: kept in the service's folder, so updates keep it and `bossgoat web https-port` changes it."""
     p = getattr(a, "https_port", None)
     if p is not None:
         write_https_port(root, p, a.dry_run)
@@ -626,7 +626,7 @@ def install_service(r, rec, home):
     port = rec.get("port") or DEFAULT_PORT
     r.notes.append("the Shepherdr service is running" if ok else
                    f"the Shepherdr service isn't answering on port {port}: another app may hold it (install again with "
-                   "--port <a free one>); `shepherdr doctor` says more")
+                   "--port <a free one>); `bossgoat doctor` says more")
 
 
 # ---- the record ---------------------------------------------------------------------------------
@@ -1106,7 +1106,7 @@ def cmd_install(a, update=False):
     counts = {}
     for x in actions:
         counts[x[2]] = counts.get(x[2], 0) + 1
-    say(f"Shepherdr {VERSION} {'update' if update else 'install'} from {src}")
+    say(f"BossGoat {VERSION} {'update' if update else 'install'} from {src}")
     say(f"  into {root}{' (dry run: nothing is written)' if a.dry_run else ''}")
     say("  files: " + ", ".join(f"{n} {k}" for k, n in sorted(counts.items())) + (f", {len(gone)} removed" if gone else ""))
     touches_tools = any(x[2] in ("new", "update", "adopt", "old", "replace") and (x[0] in ("template", "bin") or x[1].endswith(("/bin/herdr-task", "/bin/herdr-artifact"))
@@ -1124,8 +1124,8 @@ def cmd_install(a, update=False):
     # The sync to other machines waits until doctor finds this whole.
     if touches_tools and not a.dry_run:
         for p in hold_paths(root):
-            atomic_write(p, f"held by shepherdr {VERSION} install at {r.stamp}: run `shepherdr doctor`\n".encode())
-        r.notes.append("the sync to other machines is held until `shepherdr doctor` finds the install whole")
+            atomic_write(p, f"held by shepherdr {VERSION} install at {r.stamp}: run `bossgoat doctor`\n".encode())
+        r.notes.append("the sync to other machines is held until `bossgoat doctor` finds the install whole")
     fresh = not rec
     rec = rec or {}
     if fresh and not r.dry:
@@ -1210,9 +1210,9 @@ def cmd_install(a, update=False):
             # loud: the files went in, but doctor would fail the install, and every later update would too (#905)
             for x in whole_bad:
                 say(f"  ✗ {x}")
-            say("  NOT DONE: the install isn't whole. Fix the ✗ lines above, then run `shepherdr doctor`" + ("" if home else f" --root {root}") + ".")
+            say("  NOT DONE: the install isn't whole. Fix the ✗ lines above, then run `bossgoat doctor`" + ("" if home else f" --root {root}") + ".")
         else:
-            say("  done. Next: `shepherdr doctor`" + ("" if home else f" --root {root}") + ", then pick the BossGoat layout in Herdr (Ctrl+Shift+L).")
+            say("  done. Next: `bossgoat doctor`" + ("" if home else f" --root {root}") + ", then pick the BossGoat layout in Herdr (Ctrl+Shift+L).")
     return 0
 
 
@@ -1253,7 +1253,7 @@ def cmd_install_web(a, update=False):
     if not shutil.which("hc") and home and not a.force:
         raise Stop(f"herdr-core (hc {HC_MIN} or newer) isn't on the PATH: install it first (https://herdr.dev)")
     files = dict(rec.get("files", {}))
-    say(f"Shepherdr {VERSION} web-only {'update' if update else 'install'} from {src}\n  into {root}{' (dry run: nothing is written)' if a.dry_run else ''}")
+    say(f"BossGoat {VERSION} web-only {'update' if update else 'install'} from {src}\n  into {root}{' (dry run: nothing is written)' if a.dry_run else ''}")
     build_web(r, src, home, a)
     n = 0
     for _g, rel, path in web_items(src):
@@ -1351,7 +1351,7 @@ def cmd_uninstall_web(a, root):
                 os.rmdir(d)
             except OSError:
                 pass
-    say(f"Shepherdr (web only) uninstalled from {root}{' (dry run)' if a.dry_run else ''}. Your data (`shepherdr where` listed it) stays.")
+    say(f"Shepherdr (web only) uninstalled from {root}{' (dry run)' if a.dry_run else ''}. Your data (`bossgoat where` listed it) stays.")
     return 0
 
 
@@ -1371,12 +1371,12 @@ def data_check(root):
     if st["layout"] > L.LAYOUT:
         bad.append(f"the data here is on layout {st['layout']}, newer than this Shepherdr knows: update Shepherdr")
     elif st["rolled_back"]:
-        notes.append("data: rolled back to ~/.herdr (`shepherdr migrate` moves it to Shepherdr's own folders again)")
+        notes.append("data: rolled back to ~/.herdr (`bossgoat migrate` moves it to Shepherdr's own folders again)")
     elif not st["migrated"]:
         if st["shared_disk"]:
-            notes.append(f"data: stays in ~/.herdr: {st['shared_disk']} (a network disk); `shepherdr migrate --force` moves it")
+            notes.append(f"data: stays in ~/.herdr: {st['shared_disk']} (a network disk); `bossgoat migrate --force` moves it")
         else:
-            bad.append("data: not moved to Shepherdr's own folders yet: run `shepherdr migrate` (`shepherdr where` shows the plan)")
+            bad.append("data: not moved to Shepherdr's own folders yet: run `bossgoat migrate` (`bossgoat where` shows the plan)")
     else:
         r = st["roots"]
         notes.append(f"data: Shepherdr's own folders (layout {st['layout']}): {short(r['config'])}, {short(r['data'])}, {short(r['state'])}")
@@ -1387,7 +1387,7 @@ def data_check(root):
         if kept:
             notes.append(f"data: {', '.join(kept)} kept where they were (another disk); the new paths link there")
         if not (st["journal"] or {}).get("cleaned"):
-            notes.append("data: the old paths in ~/.herdr link to the new ones, for older Shepherdr copies (until `shepherdr migrate --cleanup-legacy`)")
+            notes.append("data: the old paths in ~/.herdr link to the new ones, for older Shepherdr copies (until `bossgoat migrate --cleanup-legacy`)")
     if st["worktrees"]["old_left"] and st["worktrees"]["new"] != st["worktrees"]["old"]:
         notes.append(f"worktrees: {st['worktrees']['old_left']} still in {short(st['worktrees']['old'])} (they stay until their tasks finish); "
                      f"new ones go to {short(st['worktrees']['new'])}")
@@ -1426,7 +1426,7 @@ def serve_check(root):
     elif w.get("why"):
         notes.append(f"web app: {w['why']}")
     if w.get("https_port", 443) != 443:
-        notes.append(f"web app: on tailnet HTTPS port {w['https_port']} (shepherdr web https-port 443 goes back)")
+        notes.append(f"web app: on tailnet HTTPS port {w['https_port']} (bossgoat web https-port 443 goes back)")
     if host and not sv.get("reachable"):
         notes.append(f"{host} can't be reached now: this machine keeps its own copy of the shared data until it's back")
     tailscale = shutil.which("tailscale")
@@ -1445,11 +1445,11 @@ def update_hint(rec):
     """How this install updates: from the checkout it came from, or (Serve from) from the machine that sent it."""
     src = rec.get("source") or ""
     if os.path.basename(src) == "shepherdr-src":
-        return "to update: from the machine that installed it here, `shepherdr web install-on <this machine>`"
+        return "to update: from the machine that installed it here, `bossgoat web install-on <this machine>`"
     if not is_source(src):
         return f"to update: the Shepherdr it was installed from ({src}) is gone: clone it again and run ./install.sh" + (" --web" if rec.get("web") else "") + " there"
     pull = f"`git -C {src} pull --ff-only`, then " if os.path.exists(os.path.join(src, ".git")) else ""
-    return f"to update: {pull}`shepherdr update`" + (" (web only)" if rec.get("web") else "")
+    return f"to update: {pull}`bossgoat update`" + (" (web only)" if rec.get("web") else "")
 
 
 def github_checks_check(root):
@@ -1552,7 +1552,7 @@ def cmd_doctor(a):
         if home and has_unit(root):
             up, why = service_answers(root)
             s_bad += [] if up else [why]
-        say(f"Shepherdr {rec.get('version')} (web only) under {root} (from {rec.get('source')}, {rec.get('at')})")
+        say(f"BossGoat {rec.get('version')} (web only) under {root} (from {rec.get('source')}, {rec.get('at')})")
         for x in bad + s_bad:
             say(f"  ✗ {x}")
         ab = agent_browser_state(root)
@@ -1580,7 +1580,7 @@ def cmd_doctor(a):
             up, why = service_answers(root)
             bad += [] if up else [why]
         t_notes += s_notes
-    say(f"Shepherdr {rec.get('version')} under {root} (from {rec.get('source')}, {rec.get('at')})")
+    say(f"BossGoat {rec.get('version')} under {root} (from {rec.get('source')}, {rec.get('at')})")
     for x in bad:
         say(f"  ✗ {x}")
     ab = agent_browser_state(root)
@@ -1604,6 +1604,8 @@ def cmd_doctor(a):
 
 def cmd_uninstall(a):
     root = os.path.realpath(a.root or real_home())
+    # Load the path helper before uninstall removes the installed copy.
+    layout_mod()
     rec = load_record(root)
     if not rec and os.path.isfile(os.path.join(root, WEB_RECORD)):
         return cmd_uninstall_web(a, root)
@@ -1715,7 +1717,7 @@ def cmd_uninstall(a):
                     os.rmdir(d)
                 except OSError:
                     pass
-    say(f"Shepherdr uninstalled from {root}{' (dry run)' if a.dry_run else ''}. Your data/, Shepherdr's data folders (`shepherdr where`) and your own changes stay.")
+    say(f"Shepherdr uninstalled from {root}{' (dry run)' if a.dry_run else ''}. Your data/, Shepherdr's data folders (`bossgoat where`) and your own changes stay.")
     for k in kept:
         say(f"  kept (changed or yours): {k}")
     if r.backed:
@@ -1810,7 +1812,7 @@ def cmd_web_install_on(a):
 
 
 def cmd_web_https_port(a):
-    """shepherdr web https-port [N]: the tailnet HTTPS port this machine shares the web app on. With N: kept, and the
+    """bossgoat web https-port [N]: the tailnet HTTPS port this machine shares the web app on. With N: kept, and the
     service (running here) moves its share and links there within seconds: says the new link or tailscale's reason."""
     root = real_home()
     if a.machine is None:
@@ -1818,12 +1820,12 @@ def cmd_web_https_port(a):
         if a.json:
             print(json.dumps({"https_port": p}))
         else:
-            say(f"The web app's tailnet HTTPS port here: {p}" + (" (the default)" if p == 443 else " (shepherdr web https-port 443 goes back)"))
+            say(f"The web app's tailnet HTTPS port here: {p}" + (" (the default)" if p == 443 else " (bossgoat web https-port 443 goes back)"))
         return 0
     try:
         p = int(a.machine)
     except ValueError:
-        raise Stop(f"{a.machine} isn't a port: shepherdr web https-port <1-65535>, e.g. 8443")
+        raise Stop(f"{a.machine} isn't a port: bossgoat web https-port <1-65535>, e.g. 8443")
     since = time.time()
     write_https_port(root, p)
     w = web_outcome(root, since, p) if has_unit(root) else None
@@ -1831,7 +1833,7 @@ def cmd_web_https_port(a):
     if a.json:
         print(json.dumps(out))
     elif w is None:
-        say(f"Kept: the web app goes on tailnet HTTPS port {p} once Shepherdr's service runs here (`shepherdr doctor` checks).")
+        say(f"Kept: the web app goes on tailnet HTTPS port {p} once Shepherdr's service runs here (`bossgoat doctor` checks).")
     elif out["error"]:
         say(f"Kept port {p}, but the web app isn't shared: {out['error']}")
     elif (w.get("serve") or {}).get("host"):
@@ -1848,7 +1850,7 @@ def cmd_web(a):
         return cmd_web_https_port(a)
     if a.action in ("serve-from", "status"):
         if a.action == "serve-from" and not a.machine:
-            raise Stop("which machine? shepherdr web serve-from <machine|here> (hc machine ls lists them)")
+            raise Stop("which machine? bossgoat web serve-from <machine|here> (hc machine ls lists them)")
         bun = bun_path()
         script = next((p for p in (os.path.join(real_home(), SHARE, "service", "serve-from.ts"),
                                    os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "service", "serve-from.ts"))
@@ -1858,7 +1860,7 @@ def cmd_web(a):
         argv = [bun, script, a.action] + ([a.machine] if a.machine else []) + (["--take-link"] if a.take_link else []) + (["--json"] if a.json else [])
         env = {**os.environ, "SHEPHERDR_CLI": os.path.realpath(__file__)}
         return subprocess.run(argv, env=env).returncode
-    raise Stop("shepherdr web serve-from <machine|here> [--take-link] | shepherdr web status | shepherdr web https-port [N]")
+    raise Stop("bossgoat web serve-from <machine|here> [--take-link] | bossgoat web status | bossgoat web https-port [N]")
 
 
 def cmd_where(a):
@@ -1870,7 +1872,7 @@ def cmd_where(a):
         say(json.dumps(st, indent=1))
         return 0
     state = ("Shepherdr's own folders" if st["migrated"] else "rolled back to ~/.herdr" if st["rolled_back"]
-             else "~/.herdr (not moved yet: `shepherdr migrate`)")
+             else "~/.herdr (not moved yet: `bossgoat migrate`)")
     say(f"layout {st['layout'] or 1} (this Shepherdr knows {st['knows']}): {state}")
     for k, v in st["roots"].items():
         say(f"  {k:7} {v}")
@@ -1906,7 +1908,7 @@ def cmd_migrate(a):
         say("Shepherdr's data is back in ~/.herdr: " + (", ".join(sorted(res["moved"])) or "nothing was moved") + ".")
         for n in res["notes"]:
             say(f"  - {n}")
-        say("  An older Shepherdr finds it as it left it; this one stays on ~/.herdr until `shepherdr migrate`.")
+        say("  An older Shepherdr finds it as it left it; this one stays on ~/.herdr until `bossgoat migrate`.")
         restart_service(root)
         return 0
     if a.cleanup_legacy:
@@ -1933,7 +1935,7 @@ def cmd_migrate(a):
 
 def cmd_secrets(a):
     if a.action == "move-to" and not (a.machine or a.to_id):
-        raise Stop("which machine? shepherdr secrets move-to <machine|here> (hc machine ls lists them)")
+        raise Stop("which machine? bossgoat secrets move-to <machine|here> (hc machine ls lists them)")
     bun = bun_path()
     script = next((p for p in (os.path.join(real_home(), SHARE, "service", "secrets-move.ts"),
                                os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "service", "secrets-move.ts"))
@@ -1946,7 +1948,7 @@ def cmd_secrets(a):
 
 
 def hand_over(a, argv):
-    """`shepherdr update` runs the installed copy, which a pull doesn't change: installing with it wrote the old version
+    """`bossgoat update` runs the installed copy, which a pull doesn't change: installing with it wrote the old version
     (and its old steps), so it took a second run to say the new one. When the source's own installer is another, it
     does the install instead, told where its source is."""
     if os.environ.get("SHEPHERDR_HANDED_OVER"):
@@ -1976,7 +1978,7 @@ def hand_over(a, argv):
 
 
 def main(argv):
-    ap = argparse.ArgumentParser(prog="shepherdr", description="Install, update, check or remove Shepherdr in Herdr.")
+    ap = argparse.ArgumentParser(prog="bossgoat", description="Install, update, check or remove BossGoat in Herdr. The shepherdr command remains a compatibility alias.")
     sub = ap.add_subparsers(dest="cmd")
     for name in ("install", "update", "uninstall", "doctor"):
         c = sub.add_parser(name)
@@ -1996,7 +1998,7 @@ def main(argv):
             c.add_argument("--port", type=int, help=f"the port Shepherdr's service listens on, on 127.0.0.1 (default {DEFAULT_PORT}; "
                                                     "kept for updates): when another app already uses it")
             c.add_argument("--https-port", type=int, help="the tailnet HTTPS port the web app is shared on (default 443; kept "
-                                                          "for updates, `shepherdr web https-port` changes it): when something else here holds 443")
+                                                          "for updates, `bossgoat web https-port` changes it): when something else here holds 443")
             c.add_argument("--no-build", action="store_true", help="install the web app as it is in the checkout: no build, even when it's missing or old")
     w = sub.add_parser("web", help="where the web app is served from (Serve from)")
     w.add_argument("action", choices=["serve-from", "status", "install-on", "https-port"])
@@ -2044,12 +2046,12 @@ def main(argv):
         if a.cmd == "migrate":
             return cmd_migrate(a)
         if a.cmd == "version":
-            say(f"shepherdr {VERSION}")
+            say(f"bossgoat {VERSION}")
             return 0
         ap.print_help()
         return 2
     except Stop as e:
-        print(f"shepherdr: {e}", file=sys.stderr)
+        print(f"bossgoat: {e}", file=sys.stderr)
         return 1
 
 
