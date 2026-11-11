@@ -55,12 +55,12 @@ An agent that asks you something, wants a permission or a plan approved shows un
 <table>
 <tr>
 <td align="center" valign="top" width="33%"><h3>1️⃣</h3><b>Install it into Herdr</b><br /><sub>With the Herdr app opened once, clone this repo and run <code>./install.sh --dry-run</code> to see what it does, then <code>./install.sh</code>. <code>./install.sh --web</code> installs the web app alone.</sub></td>
-<td align="center" valign="top" width="33%"><h3>2️⃣</h3><b>Check it and switch to it</b><br /><sub>Run <code>shepherdr doctor</code>. In Herdr, <code>Ctrl+Shift+L</code> picks the <code>BossGoat</code> layout.</sub></td>
+<td align="center" valign="top" width="33%"><h3>2️⃣</h3><b>Check it and switch to it</b><br /><sub>Run <code>bossgoat doctor</code>. In Herdr, <code>Ctrl+Shift+L</code> picks the <code>BossGoat</code> layout.</sub></td>
 <td align="center" valign="top" width="33%"><h3>3️⃣</h3><b>Write to an Assistant</b><br /><sub>Make a space for a folder (<code>Ctrl+Shift+N</code>) and say what needs doing. <code>Ctrl+K</code> jumps anywhere and <code>Ctrl+Shift+?</code> shows every key.</sub></td>
 </tr>
 </table>
 
-[The docs](docs/) cover installation and development. BossGoat keeps the `shepherdr` command and storage paths for compatibility; the original [Shepherdr](https://github.com/eliasstravik/shepherdr) history and license are retained.
+[The docs](docs/) cover installation and development. Use the `bossgoat` command; `shepherdr` remains a compatibility alias and storage paths stay unchanged; the original [Shepherdr](https://github.com/eliasstravik/shepherdr) history and license are retained.
 
 ## Get everything included, free
 
@@ -75,13 +75,15 @@ An agent that asks you something, wants a permission or a plan approved shows un
 
 ## Updating
 
+Run from the checkout used for installation. If `bossgoat` is not on your PATH yet, pull the latest code and run `./install.sh --keys keep` once (`./install.sh --web` for a web-only install).
+
 ```bash
 git pull --ff-only
-shepherdr update
-shepherdr doctor
+bossgoat update
+bossgoat doctor
 ```
 
-BossGoat doesn't update itself: it never follows main, so a merge can't change what runs. An update replaces only the files it put there that you haven't changed (yours stay, with the new copy beside them as `.new`, or in the backup when the mod file changed too), one mod at a time, and keeps a backup of anything it replaces. Agents keep running in herdr-core meanwhile. Until `shepherdr doctor` says the install is whole, your other machines don't get the new helpers. [Upgrading](docs/upgrading.md) has the details.
+BossGoat doesn't update itself: it never follows main, so a merge can't change what runs. An update replaces only the files it put there that you haven't changed (yours stay, with the new copy beside them as `.new`, or in the backup when the mod file changed too), one mod at a time, and keeps a backup of anything it replaces. Agents keep running in herdr-core meanwhile. Until `bossgoat doctor` says the install is whole, your other machines don't get the new helpers. [Upgrading](docs/upgrading.md) has the details.
 
 ## Get your questions answered
 
@@ -102,7 +104,7 @@ Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/Neu
 Yes: herdr-core runs the agents and the web app is your window, in a browser on your tailnet. Give your agent this:
 
 ```text
-Install herdr-core (https://herdr.dev), Tailscale (signed in), python3, git and Claude Code, Codex or Cursor. Then clone https://github.com/NeuralHerd/BossGoat, read its docs/install.md and docs/web.md, and install only the web app with ./install.sh --web. Check it with shepherdr doctor, then give me the link from shepherdr web status. Keep it private to my tailnet: never Tailscale Funnel.
+Install herdr-core (https://herdr.dev), Tailscale (signed in), python3, git and Claude Code, Codex or Cursor. Then clone https://github.com/NeuralHerd/BossGoat, read its docs/install.md and docs/web.md, and install only the web app with ./install.sh --web. Check it with bossgoat doctor, then give me the link from bossgoat web status. Keep it private to my tailnet: never Tailscale Funnel.
 ```
 
 ### How do I check that BossGoat is installed right?
@@ -110,7 +112,7 @@ Install herdr-core (https://herdr.dev), Tailscale (signed in), python3, git and 
 Run this: it checks every file it installed, the helper links, the shared copies and the programs it needs, and says what's missing.
 
 ```bash
-shepherdr doctor
+bossgoat doctor
 ```
 
 BossGoat settings → Machines says how each machine is, and each machine shows its load, memory and disk in the sidebar.
@@ -129,11 +131,11 @@ Only the ones it made. Every task works in its own worktree, on its own branch `
 
 ### Where do my tasks live?
 
-In BossGoat's own folders on each machine: tasks, artifacts, task worktrees and the secrets vault in `~/.local/share/shepherdr`, BossGoat's settings in `~/.config/shepherdr`, task browsers and the service's files in `~/.local/state/shepherdr` (`shepherdr where` lists them; older ones stay in `~/.herdr`, which links there). The window's own state (chat drafts, attachments) is in your Herdr folder's `data/`. Uninstalling never touches either. [Develop](docs/develop.md) covers the code.
+In BossGoat's own folders on each machine: tasks, artifacts, task worktrees and the secrets vault in `~/.local/share/shepherdr`, BossGoat's settings in `~/.config/shepherdr`, task browsers and the service's files in `~/.local/state/shepherdr` (`bossgoat where` lists them; older ones stay in `~/.herdr`, which links there). The window's own state (chat drafts, attachments) is in your Herdr folder's `data/`. Uninstalling never touches either. [Develop](docs/develop.md) covers the code.
 
 ### Can I use several machines?
 
-Yes. BossGoat is installed once, in the Herdr app on your main machine. Every other machine you add to herdr-core (`hc machine add <ssh target>`, or Add machine in the sidebar) shows up in the sidebar on its own, with its spaces, tasks and Assistants. herdr-task copies itself, its helpers and the role instructions there, and keeps them current. It needs herdr-core, Python, Git and your agent CLI, and nothing of BossGoat's installed by hand. The web app can be served from one of them that stays on (a Mac mini, a cloud VM): BossGoat settings → Web → Serve from, or `shepherdr web serve-from <machine>`; [Web](docs/web.md) has how.
+Yes. BossGoat is installed once, in the Herdr app on your main machine. Every other machine you add to herdr-core (`hc machine add <ssh target>`, or Add machine in the sidebar) shows up in the sidebar on its own, with its spaces, tasks and Assistants. herdr-task copies itself, its helpers and the role instructions there, and keeps them current. It needs herdr-core, Python, Git and your agent CLI, and nothing of BossGoat's installed by hand. The web app can be served from one of them that stays on (a Mac mini, a cloud VM): BossGoat settings → Web → Serve from, or `bossgoat web serve-from <machine>`; [Web](docs/web.md) has how.
 
 ### Do I have to start every task through an Assistant?
 

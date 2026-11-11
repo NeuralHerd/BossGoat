@@ -43,7 +43,7 @@ RECIPE.md, preview.png   the herdr.dev listing (repo topic herdr-layout)
   then `bin/sync-shared`.
 - Tests never touch the real folders: herdr-task moves nothing when `HERDR_TASK_STORE`, `HERDR_TASK_SETTINGS` or
   `SHEPHERDR_NO_MIGRATE` is set; `test/test_layout.py` builds throwaway homes (`layout.migrate(home=..., env={})`).
-  `shepherdr --root <scratch>` ignores `SHEPHERDR_HOME` and `XDG_*`.
+  `bossgoat --root <scratch>` ignores `SHEPHERDR_HOME` and `XDG_*`.
 
 ## Checks
 
