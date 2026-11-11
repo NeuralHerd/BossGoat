@@ -38,6 +38,7 @@ import { NOTIFY, NOTIFY_DEFAULT, notifyMachine, notifyMachineOwn, notifyOf, noti
 import { machinesSection } from "./machines-section.js";
 import { TEXT, RADIUS, H, button, link, toggleSwitch, segmented, menuRow } from "./ui.js";
 import { webSection } from "./web-section.js";
+import { UPDATES, updatesInit, updatesSection, runUpdate } from "./updates-section.js";
 import { SH } from "./core/paths.js";
 import { dirs } from "./dirs.js";
 // Every page's, row's and button's words, and the rows' choices: core/settings.js, shared with the web app.
@@ -48,7 +49,7 @@ import { SECTIONS as SHARED_SECTIONS, ROLES, HOLYCOW, NOTES, MERGE, MUST_FIX, RO
   EVERYWHERE, CHANGED_HERE, RESET, EDIT_INSTRUCTIONS, USE_OTHER_CLI, LOADING_AGENTS, SAVED, sameAs as sameAsWords,
   spacesOwn, otherCliWords, backupProblem, notifyMachineAbout, machineLabel, TASK_ROWS, LEVEL } from "./core/settings.js";
 
-const SECTIONS = SHARED_SECTIONS.flatMap((s) => s.id === "window" ? [APPEARANCE, s] : [s]);
+const SECTIONS = [...SHARED_SECTIONS.flatMap((s) => s.id === "window" ? [APPEARANCE, s] : [s]), UPDATES];
 
 const I = (name) => `mods/shepherdr-settings/${name}.svg`;
 // A page's title, and a Tasks row's (by its key, section.field).
@@ -108,6 +109,8 @@ export default class ShepherdrSettings extends View {
     // Autopilot: one setting for every space, kept by herdr-task (autopilot-section.js).
     this.ap = autopilotInit(this, cx);
     this.appearance = appearanceInit();
+    this.updates = updatesInit();
+    runUpdate(this, "status", cx);
     // The add-ons Window's switches offer (lib/addons.json, layout.js).
     this.addons = null;
     cx.spawn(async (cx) => { this.addons = await manifest(); cx.notify(); });
@@ -685,6 +688,7 @@ export default class ShepherdrSettings extends View {
   // (Everywhere, then every space by machine), and under it what that level means (a space's
   // machine and folder). A page that is one for every space says so instead.
   levelBar(t) {
+    if (this.section === "updates") return div();
     if (this.section === "appearance") return div().pb(14).text_size(TEXT.label).text_color(t.dim).child(WALLPAPER.scope);
     if (!SECTIONS.find((s) => s.id === this.section)?.space) {
       return div().pb(14).text_size(TEXT.label).line_height("17px").text_color(t.dim).child(LEVEL.global);
@@ -781,6 +785,7 @@ export default class ShepherdrSettings extends View {
       : this.section === "appearance" ? appearanceSection(this, t, cx)
       : this.section === "window" ? layoutSection(this, t)
       : this.section === "web" ? webSection(this, t)
+      : this.section === "updates" ? updatesSection(this, t, cx)
       : this.section === "notify" ? this.notify(t)
       : this.section === "autopilot" ? autopilotSection(this, t, cx)
       : machinesSection(this, t, cx);

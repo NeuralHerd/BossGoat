@@ -28,6 +28,25 @@ The installer adds `bossgoat` to `~/.local/bin`. The `shepherdr` command remains
 
 Then in Herdr, `Ctrl+Shift+L` picks the `BossGoat` layout.
 
+### Updating BossGoat
+
+Open **BossGoat settings → Updates**. **Check now** checks the tracked branch of the checkout
+used for this installation. **Update now** downloads and installs it, with progress and errors
+shown in Settings. The job keeps running if Settings reloads. **What’s new** opens BossGoat’s
+change history. This updates BossGoat on this computer; Herdr has its own updater.
+
+The updater refuses dirty, detached or diverged source checkouts and never resets your branch.
+It uses the existing installer’s backup and customization rules. From a terminal:
+
+```bash
+bossgoat updates check
+bossgoat updates install
+bossgoat updates status
+```
+
+The manual route still works: run `git pull --ff-only` in the installation checkout, then
+`bossgoat update`. An installation without a Git checkout must be reinstalled from a checkout.
+
 ### Upgrading an existing Shepherdr layout
 
 Before installing this version, copy the layout through the running Herdr app so pane sizes,

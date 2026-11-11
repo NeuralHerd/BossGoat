@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""This computer's update check and durable installer job, used by BossGoat Settings."""
+import argparse
+import contextlib
+import fcntl
+import importlib.machinery
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+sys.dont_write_bytecode = True
+loader = importlib.machinery.SourceFileLoader("bossgoat_installer", str(Path(__file__).with_name("shepherdr")))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+I = importlib.util.module_from_spec(spec)
+loader.exec_module(I)
+
+
+class UpdateError(Exception):
+    pass
+
+
+def record(root):
+    return I.load_record(root) or I.json_file(os.path.join(root, I.WEB_RECORD)) or {}
+
+
+def path(root, name):
+    return I.service_file(root, "updates." + name)
+
+
+def save(root, state):
+    I.atomic_write(path(root, "json"), (json.dumps(state) + "\n").encode(), 0o600)
+    return state
+
+
+def git(src, *args, ok=(0,)):
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never",
+           "GIT_SSH_COMMAND": "ssh -oBatchMode=yes -oConnectTimeout=15"}
+    try:
+        r = subprocess.run(["git", "-C", src, *args], capture_output=True, text=True, timeout=60, env=env)
+    except (OSError, subprocess.TimeoutExpired):
+        raise UpdateError("The update source did not respond. Check your connection and Git access.")
+    if r.returncode not in ok:
+        raise UpdateError("Could not read the update source. Check your connection, Git access and tracked branch.")
+    return r.stdout.strip(), r.returncode
+
+
+def source(root):
+    rec = record(root)
+    src = rec.get("source")
+    if not src or not I.is_source(src):
+        raise UpdateError("The installation checkout is missing. Reinstall BossGoat from its repository.")
+    branch, code = git(src, "symbolic-ref", "--quiet", "--short", "HEAD", ok=(0, 1))
+    if code:
+        raise UpdateError("The checkout has no branch selected. Select its update branch before updating.")
+    remote, _ = git(src, "config", "--get", "branch." + branch + ".remote", ok=(0, 1))
+    ref, _ = git(src, "config", "--get", "branch." + branch + ".merge", ok=(0, 1))
+    if not remote or remote == "." or not ref.startswith("refs/heads/"):
+        raise UpdateError("The checkout has no tracked update branch. Set its upstream branch before updating.")
+    changes, _ = git(src, "status", "--porcelain")
+    if changes:
+        raise UpdateError("The BossGoat checkout has uncommitted changes. Commit or stash them before updating.")
+    head, _ = git(src, "rev-parse", "HEAD")
+    return rec, src, branch, remote, ref, head
+
+
+def matches(rec, src):
+    items = I.web_items(src) if rec.get("web") else I.source_items(src)[2]
+    return all(rec.get("files", {}).get(rel) == I.fsha(rel, I.read(file)) for _, rel, file in items)
+
+
+def check(root):
+    rec, src, branch, remote, ref, head = source(root)
+    git(src, "fetch", "--no-tags", remote, ref)
+    target, _ = git(src, "rev-parse", "FETCH_HEAD")
+    if source(root)[1:] != (src, branch, remote, ref, head):
+        raise UpdateError("The checkout changed during the update check. Check again.")
+    _, diverged = git(src, "merge-base", "--is-ancestor", head, target, ok=(0, 1))
+    if diverged:
+        raise UpdateError("The checkout is ahead of or differs from its update branch. Reconcile it before updating; nothing was reset.")
+    available = target != head or not matches(rec, src)
+    return {"state": "available" if available else "current", "version": rec.get("version"), "available": available,
+            "checked_at": int(time.time() * 1000), "branch": branch, "source": src, "head": head, "revision": target,
+            "message": "An update is available." if available else "BossGoat is up to date."}
+
+
+@contextlib.contextmanager
+def locked(root):
+    os.makedirs(os.path.dirname(path(root, "lock")), exist_ok=True)
+    with open(path(root, "lock"), "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise UpdateError("An update check or installation is already running.")
+        yield lock
+
+
+def status(root):
+    state = I.json_file(path(root, "json")) or {"state": "idle", "message": "Check for a new version of BossGoat."}
+    state["version"] = record(root).get("version")
+    if state.get("state") == "installing":
+        try:
+            with locked(root):
+                state = {**state, "state": "error", "available": False,
+                         "message": "The update stopped before finishing. Check again to retry.", "log": path(root, "log")}
+        except UpdateError:
+            pass
+    return state
+
+
+def install(root):
+    # The child inherits the held lock, so Settings can reload without losing the running job.
+    with locked(root) as lock:
+        source(root)
+        state = save(root, {"state": "installing", "version": record(root).get("version"), "available": False,
+                            "message": "Updating BossGoat…", "log": path(root, "log")})
+        fd = os.open(path(root, "log"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as log:
+            try:
+                subprocess.Popen([sys.executable, os.path.realpath(__file__), "_install", "--root", root,
+                                  "--lock-fd", str(lock.fileno())], stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                 start_new_session=True, pass_fds=(lock.fileno(),))
+            except OSError:
+                raise UpdateError("The installer could not start. Check again to retry.")
+        return state
+
+
+def install_job(root):
+    result = check(root)
+    rec, src, branch, remote, ref, head = source(root)
+    if (src, branch, head) != (result["source"], result["branch"], result["head"]):
+        raise UpdateError("The checkout changed before installation. Check again.")
+    git(src, "merge", "--ff-only", "--no-edit", result["revision"])
+    save(root, {**result, "state": "installing", "available": False, "message": "Installing BossGoat. This can take a few minutes…", "log": path(root, "log")})
+    process = subprocess.run([sys.executable, os.path.join(src, "bin", "shepherdr"), "update", "--root", root,
+                              "--source", src, "--keys", "keep"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True)
+    print(process.stdout, flush=True)
+    if process.returncode or "NOT DONE:" in process.stdout:
+        raise UpdateError("The update did not finish. See the update log, then check again to retry.")
+    save(root, {**result, "state": "current", "version": record(root).get("version"), "available": False,
+                "message": "BossGoat was updated. Reopen Settings to see the latest version.", "log": path(root, "log")})
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("status", "check", "install", "_install"), nargs="?", default="status")
+    parser.add_argument("--root", default=I.real_home())
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--lock-fd", type=int, help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+    root = os.path.realpath(args.root)
+    try:
+        if args.action == "_install":
+            if args.lock_fd is None:
+                raise UpdateError("Start updates from Settings or bossgoat updates install.")
+            with os.fdopen(args.lock_fd, "a"):
+                try:
+                    install_job(root)
+                except (UpdateError, OSError, ValueError) as error:
+                    save(root, {"state": "error", "available": False, "message": str(error), "log": path(root, "log")})
+                    return 1
+            return 0
+        if args.action == "check":
+            with locked(root):
+                result = save(root, check(root))
+        elif args.action == "install":
+            result = install(root)
+        else:
+            result = status(root)
+        print(json.dumps(result) if args.json else result["message"])
+        return 0
+    except (UpdateError, OSError, ValueError) as error:
+        result = {"state": "error", "available": False, "version": record(root).get("version"), "message": str(error)}
+        print(json.dumps(result) if args.json else result["message"])
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
