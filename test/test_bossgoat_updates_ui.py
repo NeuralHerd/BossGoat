@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 let reply = {state: 'current', version: '3.1.30', available: false}, request;
 const requests = [], timers = [], jobs = [], controls = [];
 const appHome = () => '/example/app';
+const red = () => '#ff6369';
 const exec = async (program, args) => {
   requests.push({program, args});
   return await new Promise(resolve => { request = () => resolve({stdout: JSON.stringify(reply)}); });
