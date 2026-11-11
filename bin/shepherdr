@@ -19,6 +19,7 @@
   bossgoat secrets where               which machine keeps them
   bossgoat uninstall  [--root DIR] [--dry-run]
   bossgoat doctor     [--root DIR]: checks the install; once it's whole, lets the sync to other machines go
+  bossgoat updates [status|check|install]  check and update from the tracked source branch
   bossgoat version
 
 What goes where (each under --root, default your home):
@@ -2025,6 +2026,10 @@ def main(argv):
     mg.add_argument("--cleanup-legacy", action="store_true", help="remove the links at the old paths (once every machine is updated)")
     mg.add_argument("--force", action="store_true", help="move even on a network disk (no other machine uses this home)")
     mg.add_argument("--yes", action="store_true")
+    updates = sub.add_parser("updates", help="check and install updates, as in BossGoat Settings")
+    updates.add_argument("action", nargs="?", choices=("status", "check", "install"), default="status")
+    updates.add_argument("--root")
+    updates.add_argument("--json", action="store_true")
     sub.add_parser("version")
     a = ap.parse_args(argv)
     try:
@@ -2049,6 +2054,10 @@ def main(argv):
             return cmd_where(a)
         if a.cmd == "migrate":
             return cmd_migrate(a)
+        if a.cmd == "updates":
+            helper = os.path.join(os.path.dirname(os.path.realpath(__file__)), "bossgoat-updates")
+            return subprocess.run([sys.executable, helper, a.action] + (["--root", a.root] if a.root else [])
+                                  + (["--json"] if a.json else [])).returncode
         if a.cmd == "version":
             say(f"bossgoat {VERSION}")
             return 0
