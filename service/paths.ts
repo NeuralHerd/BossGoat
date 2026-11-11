@@ -42,7 +42,7 @@ export const SOCK = sockPath(DATA);
 export const TOKEN = join(DATA, "token");         // local callers (the Herdr window, the CLI) show this
 export const LOG = join(DATA, "service.log");
 export const PORT = Number(process.env.SHEPHERDR_PORT || 7788);
-export const MOUNT = "/shepherdr";                // tailscale serve --set-path; never funnel
+export const MOUNT = "/bossgoat";                // tailscale serve --set-path; never funnel
 
 // The settings file, ~/.config/shepherdr/settings.json (HERDR_TASK_SETTINGS: a test's own). Read at each use, so a
 // test's own file holds whichever module loaded first.

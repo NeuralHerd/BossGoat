@@ -67,6 +67,7 @@ describe("through tailscale serve", () => {
       expect(gate(page("/", nav), g, false, true)).toMatchObject({ ok: true, via: "tailnet" });
       expect(gate(page("/?task=abc", nav), g, false, true)).toMatchObject({ ok: true, via: "tailnet" });
       expect(gate(page("/shepherdr/", nav), g, false, true)).toMatchObject({ ok: true, via: "tailnet" });
+      expect(gate(page("/bossgoat/", nav), g, false, true)).toMatchObject({ ok: true, via: "tailnet" });
     });
     test("the link still needs the owner, the host and Tailscale's connection", () => {
       expect(gate(page("/", { ...nav, "tailscale-user-login": "other@example.com" }), g, false, true)).toMatchObject({ ok: false, status: 403 });
@@ -76,6 +77,8 @@ describe("through tailscale serve", () => {
     test("a cross-site API read is still refused, even as a navigation", () => {
       expect(gate(page("/api/me", nav), g, false, true)).toMatchObject({ ok: false, status: 403 });
       expect(gate(page("/shepherdr/api/me", nav), g, false, true)).toMatchObject({ ok: false, status: 403 });
+      expect(gate(page("/bossgoat/api/me", nav), g, false, true)).toMatchObject({ ok: false, status: 403 });
+      expect(gate(page("/bossgoat/api/ws", nav), g, true, true)).toMatchObject({ ok: false, status: 403 });
     });
     test("a cross-site page that isn't a top-level navigation is refused", () => {
       const iframe = { ...nav, "sec-fetch-dest": "iframe" };

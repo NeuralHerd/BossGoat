@@ -19,7 +19,7 @@ function pageLink(req: Request, socket: boolean) {
   const h = req.headers;
   if (socket || req.method !== "GET") return false;
   if (h.get("sec-fetch-mode") !== "navigate" || h.get("sec-fetch-dest") !== "document") return false;
-  const path = new URL(req.url).pathname.replace(/^\/shepherdr(?=\/)/, "");
+  const path = new URL(req.url).pathname.replace(/^\/(?:bossgoat|shepherdr)(?=\/|$)/, "");
   return !/^\/api(\/|$)/.test(path);
 }
 

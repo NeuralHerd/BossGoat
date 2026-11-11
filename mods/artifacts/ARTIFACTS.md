@@ -6,13 +6,17 @@ that one file: in the window, and in the web app on the person's phone. The pers
 the Artifacts tab of the right sidebar and in your chat.
 
 ```sh
+herdr-artifact location                # show the local storage folder
+herdr-artifact location ~/Artifacts    # choose a folder and preserve existing artifacts
 herdr-artifact new ./my-report          # writes a starting recipe.json
 herdr-artifact publish ./my-report --title "Coverage by package"     # prints its id
 herdr-artifact update <id> ./my-report --note "adds the API package" # a new version, same artifact
 herdr-artifact list                     # this folder's artifacts
 herdr-artifact rm <id>
-herdr-artifact open <id>                # show it to the person where they are, and print its link
-herdr-artifact link <id>                # only its link in the web app
+herdr-artifact open <id>                # open here and print a local browser link
+herdr-artifact link <id>                # local browser link on 127.0.0.1
+herdr-artifact link <id> --remote       # optional Tailscale web link
+herdr-artifact open <id> --remote       # ask the remote web app to show it
 herdr-artifact preview <id>             # see it here as the person does: the web app's viewer on 127.0.0.1, for your browser
 ```
 
@@ -24,6 +28,27 @@ herdr-artifact preview <id>             # see it here as the person does: the we
 - Publish checks it first (every block, every picture there); a broken one is refused with why.
 - Don't open it on the person's screen unasked; tell them it's there. Asked to show it: `open`, and give
   them the link it prints.
+
+Artifacts stay on the machine that created them. `location <folder>` changes that machine’s
+storage folder, preserves existing artifacts and unrelated files, and keeps a compatibility
+link so the desktop app and service continue to find them. Conflicting destination files are
+refused; the previous store is retained as a backup. Local links use `/bossgoat/`, need no Tailscale,
+and expire after 30 minutes without use; run `link` again to restart the viewer. They are read-only: use
+the desktop panel for interaction. Use `--remote` only when the person requests remote access;
+it requires the Web add-on and Tailscale already configured. `--from <machine>` also requires
+`--remote` for `link` and `open`. These commands never enable Tailscale sharing.
+
+## HolyCow style, for every artifact
+
+Artifacts use the HolyCow / Eden light style: near-white background, white cards, charcoal
+text, blue links, pastel accents, clear headings and generous spacing. Recipes inherit it in
+both viewers, including existing artifacts. The browser uses a bounded reading width and
+section navigation; narrow tables become labeled cards. Table cells support Markdown.
+
+Start with a concise introduction, then a diagram or overview when it helps explain the
+subject. Use headings to group ideas, short paragraphs and lists, charts for comparisons,
+and `details` for long evidence. Avoid walls of text and raw file paths in table cells; use
+short, descriptive Markdown links. Do not add dark mode or a theme toggle.
 
 ## The recipe
 
@@ -47,7 +72,7 @@ Blocks, top to bottom (each may carry an `"id"`; the person's notes point at blo
 | `heading` | `text`, `level` 1-3 |
 | `text` | `md` (Markdown: bold, links, `code`, lists) |
 | `list` | `items` (Markdown each), `ordered` |
-| `table` | `columns` (labels, or `{ label, align }`), `rows` (lists of cells) |
+| `table` | `columns` (labels, or `{ label, align }`), `rows` (lists of cells; strings support Markdown) |
 | `chart` | `kind` bar, line or pie, `labels`, `series` [{ `name`, `values` (numbers) }] |
 | `stats` | `items` [{ `label`, `value`, `note` }]: a row of big numbers |
 | `image` | `src` (a picture beside recipe.json), `caption`, `w`, `h` |
@@ -104,7 +129,8 @@ herdr-artifact publish ./my-tool --title "Tic-tac-toe" --custom      # --custom 
 
 Read `~/.config/herdr-app/AGENTS.md` (Mods, UI, the `herdr` module) and the type files
 `gpui-kit.d.ts` and `herdr.d.ts` there. `./artifact.js` is written for you (`id`, `version`,
-`asset(name)`, `reply(text)`, from a click only). Colors from `theme()` only, text 12-15 px, fill
+`asset(name)`, `reply(text)`, from a click only, and HolyCow `theme()`). Import `theme` from
+`./artifact.js`, not `herdr`; use its light palette, 16 px body text and clear 23-30 px headings. Fill
 the panel (`size_full()`), scroll long content, work from 320 px wide, no timers
 (`cx.timer.every` rarely), never keep a `cx`. Publish checks it with `herdr-app check` in light
 and dark and at 320 px, and lists what to fix.

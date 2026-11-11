@@ -6,6 +6,8 @@ import home_guard  # noqa: F401  (first: every test on a throwaway home, never t
 import json
 import os
 import shutil
+import signal
+import urllib.request
 import subprocess
 import sys
 import tempfile
@@ -13,7 +15,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(ROOT, "mods", "artifacts", "bin", "herdr-artifact")
-LINK = "https://hub.example.test/shepherdr/"
+LINK = "https://hub.example.test/bossgoat/"
 
 # hc as herdr-artifact uses it: connect answers hello and doc.get (shepherdr.web: $FAKE_WEB, JSON, or unset);
 # label is logged to $FAKE_LOG; get knows no labels.
@@ -43,6 +45,11 @@ else:
 class Show(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="shepherdr-show-")
+        self.tool = os.path.join(self.dir, "artifacts", "bin", "herdr-artifact")
+        os.makedirs(os.path.dirname(self.tool))
+        shutil.copyfile(TOOL, self.tool)
+        with open(os.path.join(self.dir, "artifacts", "viewer.html"), "w") as f:
+            f.write("<!doctype html><title>Local artifact</title>")
         self.home = os.path.join(self.dir, "home")
         self.bin = os.path.join(self.dir, "bin")
         self.log = os.path.join(self.dir, "labels.log")
@@ -67,10 +74,15 @@ class Show(unittest.TestCase):
         self.aid = json.loads(out.stdout.strip().splitlines()[-1])["id"]
 
     def tearDown(self):
+        try:
+            with open(os.path.join(self.home, ".herdr", "artifacts", ".preview")) as f:
+                os.kill(json.load(f)["pid"], signal.SIGTERM)
+        except (OSError, ValueError, KeyError):
+            pass
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def run_tool(self, *args, **env):
-        return subprocess.run([sys.executable, TOOL, *args], env={**self.env, **env}, cwd=self.folder,
+        return subprocess.run([sys.executable, self.tool, *args], env={**self.env, **env}, cwd=self.folder,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
 
     def labels(self):
@@ -81,7 +93,7 @@ class Show(unittest.TestCase):
             return []
 
     def test_open_without_a_window_asks_the_screen_and_gives_the_link(self):
-        r = self.run_tool("open", self.aid, FAKE_WEB=json.dumps({"link": LINK, "id": "hub-core"}))
+        r = self.run_tool("open", self.aid, "--remote", FAKE_WEB=json.dumps({"link": LINK, "id": "hub-core"}))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn("Traceback", r.stderr)
         self.assertIn(f"Link: {LINK}?artifact={self.aid}", r.stdout)
@@ -95,12 +107,12 @@ class Show(unittest.TestCase):
         self.assertTrue(ask["id"] and ask["at"] > 0)
 
     def test_open_json_says_what_it_did(self):
-        r = self.run_tool("open", self.aid, "--json", FAKE_WEB=json.dumps({"link": LINK.rstrip("/"), "id": "hub-core"}))
+        r = self.run_tool("open", self.aid, "--remote", "--json", FAKE_WEB=json.dumps({"link": LINK.rstrip("/"), "id": "hub-core"}))
         out = json.loads(r.stdout)
         self.assertEqual(out, {"id": self.aid, "link": f"{LINK}?artifact={self.aid}", "screen": True, "window": None})
 
     def test_link_prints_only_the_link(self):
-        r = self.run_tool("link", self.aid, FAKE_WEB=json.dumps({"link": LINK, "id": "hub-core"}))
+        r = self.run_tool("link", self.aid, "--remote", FAKE_WEB=json.dumps({"link": LINK, "id": "hub-core"}))
         self.assertEqual((r.returncode, r.stdout), (0, f"{LINK}?artifact={self.aid}\n"))
         self.assertEqual(self.labels(), [])
 
@@ -108,20 +120,46 @@ class Show(unittest.TestCase):
         os.makedirs(os.path.join(self.home, ".herdr", "shepherdr"))
         with open(os.path.join(self.home, ".herdr", "shepherdr", "web.json"), "w") as f:
             json.dump({"on": True, "link": "https://laptop.example.test/shepherdr/"}, f)
-        r = self.run_tool("link", self.aid)
+        r = self.run_tool("link", self.aid, "--remote")
         self.assertEqual(r.stdout, f"https://laptop.example.test/shepherdr/?artifact={self.aid}\n")
 
-    def test_no_link_known_still_asks_the_screen(self):
-        r = self.run_tool("open", self.aid)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("No web link is known here yet", r.stdout)
-        self.assertEqual(len(self.labels()), 1)
-        self.assertEqual(self.run_tool("link", self.aid).returncode, 1)
+    def test_remote_without_a_link_does_not_send_a_screen_request(self):
+        r = self.run_tool("open", self.aid, "--remote")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("No web link is known here yet", r.stderr)
+        self.assertEqual(self.labels(), [])
+        self.assertEqual(self.run_tool("link", self.aid, "--remote").returncode, 1)
 
     def test_outside_an_agents_terminal_the_link_is_enough(self):
-        r = self.run_tool("open", self.aid, HC_TERMINAL_ID="", FAKE_WEB=json.dumps({"link": LINK, "id": "hub-core"}))
+        r = self.run_tool("open", self.aid, "--remote", HC_TERMINAL_ID="", FAKE_WEB=json.dumps({"link": LINK, "id": "hub-core"}))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn("Asked", r.stdout)
+        self.assertEqual(self.labels(), [])
+
+    def test_disabled_remote_access_does_not_reuse_a_stale_core_link(self):
+        os.makedirs(os.path.join(self.home, ".herdr", "shepherdr"))
+        with open(os.path.join(self.home, ".herdr", "shepherdr", "web.json"), "w") as f:
+            json.dump({"on": False, "link": None}, f)
+        r = self.run_tool("link", self.aid, "--remote", FAKE_WEB=json.dumps({"link": LINK}))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("optional web app isn't served", r.stderr)
+
+    def test_local_is_the_default_even_when_a_remote_host_is_available(self):
+        for cmd in ("link", "open"):
+            r = self.run_tool(cmd, self.aid, "--json", FAKE_WEB=json.dumps({"link": LINK}))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            out = json.loads(r.stdout)
+            self.assertRegex(out["link"], r"^http://127\.0\.0\.1:\d+/bossgoat/\?artifact=")
+            with urllib.request.urlopen(out["link"], timeout=5) as response:
+                self.assertIn(b"Local artifact", response.read())
+            if cmd == "open":
+                self.assertFalse(out["screen"])
+        self.assertEqual(self.labels(), [])
+
+    def test_remote_machine_is_never_silently_shared(self):
+        r = self.run_tool("link", self.aid, "--from", "other")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("needs --remote", r.stderr)
         self.assertEqual(self.labels(), [])
 
     def test_an_unknown_artifact_says_so(self):

@@ -1,13 +1,12 @@
 // An artifact's recipe (recipe.json, core/recipe.js) drawn natively in the window: the GPUI side of the one file the
 // web app draws as HTML (web/src/screens/Recipe.tsx). herdr-artifact copies this file, recipe.js and a main.js that
 // its recipe (recipe-data.js, from recipe.json) into each recipe artifact it installs, so the viewer, its versions and Mark up stay as they are.
-// Colors from theme() only; text 12-15 px; works from 320 px wide. A choice, a form or a button sends its words to
+// HolyCow light colors from artifact.js; works from 320 px wide. A choice, a form or a button sends its words to
 // the agent that made it (artifact.js reply), from a click only.
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, TextView, InputState, Input } from "gpui-base";
 import { image } from "gpui-kit";
-import { theme } from "herdr";
-import { asset, reply } from "./artifact.js";
+import { theme, title, asset, reply } from "./artifact.js";
 import data from "./recipe-data.js";
 import { chartShapes, choiceReply, formReply, isLink, withIds } from "./recipe.js";
 
@@ -26,7 +25,8 @@ export default class RecipeView extends View {
   }
 
   md(id, text, t) {
-    return div().w_full().min_w(0).text_size(13).text_color(t.foreground).child(TextView.markdown(`md-${id}`, String(text ?? " ")).selectable(true));
+    return div().w_full().min_w(0).child(TextView.markdown(`md-${id}`, String(text ?? " "))
+      .text_size(16).line_height(1.625).text_color(t.foreground).selectable(true));
   }
 
   send(key, text, cx) {
@@ -44,7 +44,7 @@ export default class RecipeView extends View {
 
   chart(b, t) {
     const s = chartShapes(b);
-    const colors = [t.accent, t.working, t.done, t.blocked, t.muted];
+    const colors = t.chart;
     if (b.kind === "pie") {
       // one bar of shares, then its legend: the same numbers as the web's pie, readable at any width
       return v_flex().gap(8)
@@ -75,16 +75,16 @@ export default class RecipeView extends View {
 
   block(b, t, cx) {
     switch (b.type) {
-      case "heading": return div().text_size((b.level ?? 2) <= 1 ? 17 : 15).font_semibold().whitespace_normal().child(b.text);
+      case "heading": return div().pt(20).pb(6).text_size((b.level ?? 2) <= 1 ? 28 : 23).font_semibold().whitespace_normal().child(b.text);
       case "text": return this.md(b.id, b.md, t);
-      case "list": return v_flex().gap(4).children(b.items.map((x, i) => h_flex().gap(8).items_start()
+      case "list": return v_flex().gap(14).children(b.items.map((x, i) => h_flex().gap(8).items_start()
         .child(div().flex_none().w(16).text_size(13).text_color(t.muted).child(b.ordered ? `${i + 1}.` : "•"))
         .child(this.md(`${b.id}-${i}`, x, t))));
-      case "table": return v_flex().w_full().rounded(8).border_1().border_color(t.border).overflow_hidden()
-        .child(h_flex().w_full().px(10).py(6).bg(t.surface).children(b.columns.map((c, i) => div().flex_1().min_w(0).text_size(12).font_medium().text_color(t.muted)
-          .when((c.align ?? "") === "right", (e) => e.text_right()).child(String(c.label ?? c)))))
-        .children(b.rows.map((r, ri) => h_flex().w_full().px(10).py(6).border_t_1().border_color(t.border)
-          .children(r.map((c, i) => div().flex_1().min_w(0).text_size(13).whitespace_normal().when(b.columns[i]?.align === "right", (e) => e.text_right()).child(String(c ?? ""))))));
+      case "table": return v_flex().w_full().gap(14).children(b.rows.map((r, ri) =>
+        v_flex().p(20).gap(18).rounded(16).bg(t.surface).border_1().border_color(t.border)
+          .children(r.map((c, i) => v_flex().gap(6)
+            .child(div().text_size(12).font_semibold().text_color(t.muted).child(String(b.columns[i]?.label ?? b.columns[i])))
+            .child(this.md(`${b.id}-${ri}-${i}`, c, t))))));
       case "chart": return this.chart(b, t);
       case "stats": return h_flex().flex_wrap().gap(8).children(b.items.map((x) => v_flex().min_w(120).flex_1().p(10).gap(2).rounded(8).bg(t.surface)
         .child(div().text_size(12).text_color(t.muted).child(String(x.label)))
@@ -96,8 +96,8 @@ export default class RecipeView extends View {
       case "pair": return h_flex().flex_wrap().gap(10).children([["Before", b.before], ["After", b.after]].map(([w, x]) => v_flex().flex_1().min_w(240).gap(4)
         .child(image(asset(x.src)).w_full().rounded(6).border_1().border_color(t.border))
         .child(div().text_size(12).text_color(t.muted).child(x.caption ?? w))));
-      case "code": return div().w_full().p(10).rounded(8).bg(t.surface).font_family("JetBrains Mono").text_size(12).whitespace_normal().child(b.text);
-      case "callout": return v_flex().gap(4).p(12).rounded(8).bg(t[TONE[b.tone ?? "info"]] ? t.surface : t.surface).border_l(3).border_color(t[TONE[b.tone ?? "info"]] ?? t.border)
+      case "code": return div().w_full().p(20).rounded(16).bg(t.surface).font_family("JetBrains Mono").text_size(14).line_height("23px").whitespace_normal().child(b.text);
+      case "callout": return v_flex().gap(10).p(20).rounded(16).bg(t[TONE[b.tone ?? "info"]] ? t.surface : t.surface).border_l(3).border_color(t[TONE[b.tone ?? "info"]] ?? t.border)
         .when(!!b.title, (e) => e.child(div().text_size(13).font_semibold().child(b.title)))
         .when(!!b.md, (e) => e.child(this.md(b.id, b.md, t)));
       case "columns": return h_flex().flex_wrap().gap(16).items_start().children(b.columns.map((c) => v_flex().flex_1().min_w(240).gap(14).children(c.map((x) => this.block(x, t, cx)))));
@@ -172,6 +172,10 @@ export default class RecipeView extends View {
     const body = this.error ? [div().text_size(13).text_color(t.muted).child(this.error)]
       : !this.recipe ? [] : this.recipe.blocks.map((b) => v_flex().id(`blk-${b.id}`).w_full().min_w(0).child(this.block(b, t, cx)));
     return v_flex().id("recipe").size_full().overflow_y_scrollbar().bg(t.background).text_color(t.foreground)
-      .child(v_flex().p(16).gap(14).max_w(860).children(body));
+      .child(v_flex().w_full().p(24).gap(24).max_w(1000)
+        .child(div().text_size(11).text_color(t.muted).child("BOSSGOAT · ARTIFACT"))
+        .child(div().text_size(30).line_height("36px").font_semibold().whitespace_normal().child(title))
+        .child(div().h(4).w(120).rounded(2).bg("#fba69e"))
+        .children(body));
   }
 }

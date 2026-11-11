@@ -6,12 +6,7 @@
     <title>Artifact</title>
     <meta name="robots" content="noindex" />
     <script>
-      /* light or dark as the web app picks it (?theme=dark|light wins: a screenshot of either) */
-      ;(function () {
-        var t = new URLSearchParams(location.search).get('theme')
-        var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
-        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-      })()
+      document.documentElement.dataset.theme = 'light'
       /* which artifact, kept before the web app's shared code takes the address bar */
       window.viewerLink = location.search
     </script>

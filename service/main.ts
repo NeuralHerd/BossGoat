@@ -675,7 +675,7 @@ const server = Bun.serve<{ who: string }>({
   idleTimeout: 180,
   async fetch(req, srv) {
     const url = new URL(req.url);
-    const path = url.pathname.startsWith("/shepherdr/") ? url.pathname.slice(10) : url.pathname;
+    const path = url.pathname.replace(/^\/(?:bossgoat|shepherdr)(?=\/|$)/, "") || "/";
     // the window asks this (lib/service.js): while jobs is true it leaves its background work to the service
     if (path === "/api/health") return json({ ok: true, app: "shepherdr", ...(localCaller(req, PORT) ? { id: SERVICE_ID, calls: callsOn() } : {}), version: VERSION, core: hub.up, jobs: jobs.on && hub.up, serving: host.serving(), host: host.hubName() ?? null, reachable: host.reachable(),
       // the other machines this service ticks (Serve from: the host the ones with no service of their own)

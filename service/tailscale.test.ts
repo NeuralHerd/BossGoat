@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { freePort, heldBy, httpsPort, meOf, shareProblem, webLink, webOrigin } from "./tailscale.ts";
+import { freePort, heldBy, httpsPort, meOf, shareProblem, webLink, webOrigin, served } from "./tailscale.ts";
 
 describe("the web app's tailnet HTTPS port", () => {
   test("443 unless the https-port file says another", () => {
@@ -17,9 +17,9 @@ describe("the web app's tailnet HTTPS port", () => {
     }
   });
   test("links carry the port only when it isn't 443", () => {
-    expect(webLink("box.tailnet.example")).toBe("https://box.tailnet.example/shepherdr/");
-    expect(webLink("box.tailnet.example", 443)).toBe("https://box.tailnet.example/shepherdr/");
-    expect(webLink("box.tailnet.example", 8443)).toBe("https://box.tailnet.example:8443/shepherdr/");
+    expect(webLink("box.tailnet.example")).toBe("https://box.tailnet.example/bossgoat/");
+    expect(webLink("box.tailnet.example", 443)).toBe("https://box.tailnet.example/bossgoat/");
+    expect(webLink("box.tailnet.example", 8443)).toBe("https://box.tailnet.example:8443/bossgoat/");
     expect(webOrigin("box.tailnet.example", 8443)).toBe("https://box.tailnet.example:8443");
   });
 });
@@ -61,4 +61,14 @@ describe("who owns this machine (GitHub #845)", () => {
     expect(meOf(`{"Self":{"UserID":1,"DNSName":"box.tailnet.example."},"User":{}}`)).toBeNull();
     expect(meOf("not json")).toBeNull();
   });
+});
+
+
+test("BossGoat sharing is distinguished from an existing upstream route", async () => {
+  const status = { Web: { "box:443": { Handlers: {
+    "/bossgoat": { Proxy: "http://127.0.0.1:7788" },
+    "/shepherdr": { Proxy: "http://127.0.0.1:9000" },
+  } } } };
+  expect((await served("box", status)).proxy).toBe("http://127.0.0.1:7788");
+  expect((await served("box", status, "/shepherdr")).proxy).toBe("http://127.0.0.1:9000");
 });

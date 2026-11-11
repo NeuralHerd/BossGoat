@@ -8,6 +8,8 @@ import importlib.util
 import io
 import json
 import os
+import re
+from pathlib import Path
 import shutil
 import stat
 import sys
@@ -115,6 +117,39 @@ class Publish(unittest.TestCase):
         mod = os.path.join(self.dir, "app", "mods", out["mod"])
         for f in ("recipe-view.js", "recipe.js", "artifact-markup.js", "recipe.json"):
             self.assertTrue(os.stat(os.path.join(mod, f)).st_mode & stat.S_IWUSR, f)
+
+    def test_installed_artifact_has_all_relative_dependencies_and_repairs_missing_helpers(self):
+        os.makedirs(os.path.join(self.dir, "app", "mods"))
+        out = self.publish(self.recipe())
+        folder = Path(A.APP) / "mods" / out["mod"]
+        pending, seen = [folder / "main.js"], set()
+        while pending:
+            path = pending.pop()
+            if path in seen:
+                continue
+            seen.add(path)
+            self.assertTrue(path.is_file(), f"Missing dependency: {path}")
+            for rel in re.findall(r'from [\'"]([.]/[^\'"]+)[\'"]', path.read_text()):
+                pending.append(path.parent / rel)
+        self.assertTrue(A.current(out["mod"], out["version"]))
+        (folder / "artifact-dirs.js").unlink()
+        self.assertFalse(A.current(out["mod"], out["version"]))
+        A.local_mod(out["id"])
+        self.assertTrue(A.current(out["mod"], out["version"]))
+
+    def test_existing_artifact_refreshes_its_renderer_without_a_new_version(self):
+        os.makedirs(os.path.join(self.dir, "app", "mods"))
+        out = self.publish(self.recipe())
+        folder = Path(A.APP) / "mods" / out["mod"]
+        original = (folder / "recipe.json").read_bytes()
+        renderer = Path(self.dir) / "next-recipe-view.js"
+        renderer.write_text(Path(A.RECIPE_VIEW).read_text() + "\n// updated renderer\n")
+        with mock.patch.object(A, "RECIPE_VIEW", str(renderer)):
+            self.assertFalse(A.current(out["mod"], out["version"]))
+            A.local_mod(out["id"])
+            self.assertTrue(A.current(out["mod"], out["version"]))
+            self.assertEqual((folder / "recipe-view.js").read_bytes(), renderer.read_bytes())
+            self.assertEqual((folder / "recipe.json").read_bytes(), original)
 
     def test_a_checker_that_does_not_connect_still_publishes_a_recipe(self):
         """#847: herdr-app's isolated checker doesn't connect (after Herdr restarted): it tries again, then a recipe
