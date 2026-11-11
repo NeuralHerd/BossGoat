@@ -24,3 +24,12 @@ test("other words, or before it went in, are not it", () => {
   expect(sentAs([send()], { text: "something else", at: 10_400 }, new Set())).toBeUndefined();
   expect(sentAs([send()], { text: "thumbnails broken", at: 1_000 }, new Set())).toBeUndefined();
 });
+
+
+test("Cursor web sends match new records despite missing or minute-precision timestamps", () => {
+  const s = { ...send(), cursorAfter: 100 };
+  const taken = new Set<string>();
+  expect(sentAs([s], { text: s.text, at: 0, cursorOffset: 10 }, taken)).toBeUndefined();
+  expect(sentAs([s], { text: s.text, at: 0, cursorOffset: 150 }, taken)).toBe("c1");
+  expect(sentAs([s], { text: s.text, at: 0, cursorOffset: 200 }, taken)).toBeUndefined();
+});

@@ -12,7 +12,7 @@ import * as CL from "../core/chat-log.js";
 import * as CV from "../core/chat-view.js";
 import { hasAssistantContext } from "../core/assistant-context.js";
 import { taskArtifacts } from "../core/task-artifacts.js";
-const { summary, names, pilotLine } = CL as any;
+const { summary, names, pilotLine, afterSend } = CL as any;
 const { senderName, briefLabel, firstUser, firstKeys, newsTimeline, resolveArtifacts, unsigned, fromName, sentTo, selfName, subagentsOf, isHelper } = CV as any;
 import { mentionedIn } from "../core/send.js";
 import * as MEc from "../core/mentions.js";
@@ -65,17 +65,17 @@ export const newsKey = (rows: Row[]) => JSON.stringify(rows.filter((r) => r.spac
 
 // a news event's dot: what the task was at that moment
 const NEWS: Record<string, TaskStatus> = { added: "todo", queued: "queued", started: "work", needs: "need", asks: "need", stalled: "need", failed: "need", ready: "ready", merging: "merging", merged: "done", done: "done", closed: "done" };
-type Sent = { cid: string; text: string; files: string[]; at: number };
+type Sent = { cid: string; text: string; files: string[]; at: number; cursorAfter?: number };
 const said = (v: string) => v.replace(/\s+/g, " ").trim();
 const base = (p: string) => p.split("/").pop() ?? p;
 
 /** The page's id for one of the person's messages in the log: what it sent lately with the same words (the paths of
  *  its files after them taken off; pictures come as markers Claude Code took out), read from when it began to go in.
  *  Each send is one message (taken). */
-export function sentAs(sends: Sent[], x: { text?: string; at?: number; images?: number; paths?: string[] }, taken: Set<string>): string | undefined {
+export function sentAs(sends: Sent[], x: { text?: string; at?: number; images?: number; paths?: string[]; cursorOffset?: number }, taken: Set<string>): string | undefined {
   const at = x.at ?? 0;
   const s = sends.find((s) => {
-    if (taken.has(s.cid) || at < s.at - 5000 || at - s.at > 30 * 60_000) return false;
+    if (taken.has(s.cid) || !afterSend(x, s) || at - s.at > 30 * 60_000) return false;
     const names = new Set(s.files.map(base));
     const lines = String(x.text ?? "").split("\n");
     const words = said(lines.filter((l) => !(/^[/~]/.test(l.trim()) && names.has(base(l.trim())))).join("\n"));
@@ -290,6 +290,8 @@ export class Compat {
    *  again by its words, and shows with the page's id and files */
   sends = new Map<string, Sent[]>();
   noteSend(addr: string, s: Sent) {
+    const reader = this.reader?.(addr);
+    if (reader?.kind === "cursor") s = { ...s, cursorAfter: reader.end ?? 0 };
     this.sends.set(addr, [...(this.sends.get(addr) ?? []).filter((x) => x.cid !== s.cid && Date.now() - x.at < 30 * 60_000), s].slice(-20));
   }
 

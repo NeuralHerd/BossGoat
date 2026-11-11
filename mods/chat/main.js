@@ -28,7 +28,7 @@ import { focused, props, run, theme, home, hc, exec, shared, setShared, watchFol
 import { agents, panes, terminals, spaces, inRender } from "./live.js";
 import { chatPane, chatLabel } from "./core/spaces.js";
 import * as fs from "fs/promises";
-import { FIND, LOG, Conversation, records, resultText, summary, excerpt, names, pilotLine } from "./core/chat-log.js";
+import { FIND, LOG, Conversation, records, resultText, summary, excerpt, names, pilotLine, afterSend } from "./core/chat-log.js";
 import { BgJobs } from "./core/bg-jobs.js";
 import { ChatReader } from "./core/chat-reader.js";
 import { preview } from "./core/recipe.js";
@@ -1173,7 +1173,7 @@ export default class Chat extends View {
     if (!path && starting(t)) path = "pending";
     if (path === "pending") {
       // A Claude Code that hasn't written its first line yet has no file: an empty chat.
-      if (this.phase === "finding") { this.kind = kind; this.conv = new Conversation(kind); this.start = 0; this.set("ready", cx); }
+      if (this.phase === "finding" || this.phase === "none") { this.kind = kind; this.conv = new Conversation(kind); this.start = 0; this.set("ready", cx); }
       return;
     }
     if (!path) { if (this.phase !== "ready") this.set("none", cx); return; }
@@ -1223,7 +1223,7 @@ export default class Chat extends View {
     // theirs, as sent from here (core/chat-view.js ownWords).
     for (const u of users) if (this.own?.has(u.id)) delete u.from;
     if (!this.pending?.length) return;
-    const matches = (u, p) => (u.at ?? 0) >= p.at - 5000 &&
+    const matches = (u, p) => afterSend(u, p) &&
       (same(u.text, p.sent) || (p.match && norm(u.text).includes(p.match)) || (!p.match && u.images));
     for (const id of ownWords(users, this.pending, matches)) {
       (this.own ??= new Set()).add(id);
@@ -1465,7 +1465,7 @@ export default class Chat extends View {
     // Herdr tag lines before the words: the message it replies to, the tasks it mentions.
     const body = messageBody({ text: msg.text, quote: msg.quote?.text ?? null, tags: this.taskTags(msg.text) });
     const p = { id: `pending-${msg.id}`, text: msg.text, replyTo: msg.quote ? excerpt(msg.quote.text, 80) : null, files: msg.files.filter((f) => !f.image).map((f) => f.name),
-      paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), sent: body,
+      paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), cursorAfter: this.end, sent: body,
       match: norm(msg.text).slice(0, 60) || null, msg };
     this.pending.push(p);
     const menu = msg.files.length ? null : slash.opensMenu(this.kind, msg.text);
@@ -1708,7 +1708,7 @@ export default class Chat extends View {
     const local = machine || !msg ? [] : msg.files.map((f) => f.path);
     const task = msg ? [reply + msg.text, ...local].filter(Boolean).join("\n\n") : "";
     const p = msg ? { id: `pending-${msg.id}`, text: msg.text, replyTo: msg.quote ? excerpt(msg.quote.text, 80) : null, files: msg.files.filter((f) => !f.image).map((f) => f.name),
-      paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), sent: task, match: norm(msg.text).slice(0, 60) || null } : { failed: null };
+      paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), cursorAfter: 0, sent: task, match: norm(msg.text).slice(0, 60) || null } : { failed: null };
     if (msg) this.pending.push(p);
     // Its machine offline: said plainly under the message, which starts it once the machine is
     // back (adoptSlot); nothing is lost meanwhile.

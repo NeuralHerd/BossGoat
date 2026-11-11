@@ -11,6 +11,51 @@ import { codexQuestions } from "./asks.js";
 
 export const FIND = `
 kind="$1"; pid="$2"
+if [ "$kind" = cursor ]; then
+  python3 - "$pid" <<'CURSOR_FIND'
+import glob, os, re, subprocess, sys, time
+
+# Inspect the agent before its children; sockets must never trigger DNS lookups.
+deadline = time.monotonic() + 3
+queue, seen = [sys.argv[1]], set()
+def run(args):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return ""
+    try:
+        return subprocess.run(args, capture_output=True, text=True, errors="replace",
+                              timeout=min(1, remaining)).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+while queue and time.monotonic() < deadline:
+    pid = queue.pop(0)
+    if pid in seen:
+        continue
+    seen.add(pid)
+    fd = "/proc/" + pid + "/fd"
+    if os.path.isdir(fd):
+        files = []
+        for f in glob.glob(fd + "/*"):
+            try:
+                files.append(os.readlink(f))
+            except OSError:
+                pass
+        files = "\\n".join(files)
+    else:
+        files = run(["lsof", "-nP", "-p", pid, "-Fn"])
+    match = re.search(r"/\\.cursor/chats/[^/]+/([0-9a-fA-F-]+)/store\\.db", files)
+    if match:
+        sid = match[1]
+        root = os.path.expanduser("~/.cursor/projects/*/agent-transcripts/")
+        logs = glob.glob(root + sid + "/" + sid + ".jsonl") + glob.glob(root + sid + ".jsonl")
+        print(next((f for f in logs if os.path.isfile(f)), "pending"))
+        sys.exit(0)
+    queue.extend(p for p in run(["pgrep", "-P", pid]).split() if p.isdigit())
+print("pending")
+CURSOR_FIND
+  exit $?
+fi
 kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
 for p in "$pid" $(kids "$pid"); do
   if [ "$kind" = claude ]; then
@@ -19,18 +64,6 @@ for p in "$pid" $(kids "$pid"); do
     id=$(sed -n 's/.*"sessionId":"\\([0-9a-fA-F-]*\\)".*/\\1/p' "$j")
     [ -n "$id" ] || continue
     for f in "$HOME"/.claude/projects/*/"$id".jsonl; do [ -f "$f" ] && { echo "$f"; exit 0; }; done
-    echo "pending"; exit 0
-  elif [ "$kind" = cursor ]; then
-    if [ -d "/proc/$p/fd" ]; then
-      files=$(for d in /proc/$p/fd/*; do readlink "$d"; done 2>/dev/null)
-    else
-      files=$(lsof -p "$p" -Fn 2>/dev/null | sed -n 's/^n//p')
-    fi
-    id=$(printf '%s\\n' "$files" | sed -n 's|.*/\\.cursor/chats/[^/]*/\\([0-9a-fA-F-]*\\)/store\\.db.*|\\1|p' | head -1)
-    [ -n "$id" ] || continue
-    for f in "$HOME"/.cursor/projects/*/agent-transcripts/"$id"/"$id".jsonl "$HOME"/.cursor/projects/*/agent-transcripts/"$id".jsonl; do
-      [ -f "$f" ] && { echo "$f"; exit 0; }
-    done
     echo "pending"; exit 0
   else
     if [ -d "/proc/$p/fd" ]; then
@@ -175,6 +208,13 @@ true`;
 
 const parse = (line) => { try { return JSON.parse(line); } catch { return null; } };
 const time = (s) => Date.parse(s ?? "") || 0;
+
+// Cursor has minute-precision times (or none). Only newly appended records can acknowledge a send.
+export function afterSend(message, sent) {
+  if (message.cursorOffset != null && sent.cursorAfter != null) return message.cursorOffset >= sent.cursorAfter;
+  return (message.at ?? 0) >= sent.at - 5000;
+}
+
 
 // Text Claude Code puts in a user line that the person didn't type.
 const INJECTED = /^\s*(<(local-command-|system-reminder|bash-|task-notification|user-memory-input|user-prompt-submit-hook|command-message)|Caveat: The messages below|\[Request interrupted)/;
@@ -362,6 +402,19 @@ function cleanWords(t) {
   if (reply?.replyTo !== undefined) return { text: reply.text, replyTo: reply.replyTo };
   if (reply?.quoted) return { text: t, quoted: reply.quoted, rest: reply.text };
   return t ? { text: t } : null;
+}
+
+function cursorMessage(l) {
+  let timestamp = l.timestamp;
+  const raw = typeof l.message?.content === "string" ? [{ type: "text", text: l.message.content }] : Array.isArray(l.message?.content) ? l.message.content : [];
+  const content = raw.map((b) => {
+    if (l.role !== "user" || b.type !== "text") return b;
+    const envelope = /^\s*<timestamp>([^<]*)<\/timestamp>\s*<user_query>([\s\S]*)<\/user_query>\s*$/.exec(b.text);
+    if (!envelope) return b;
+    timestamp ??= envelope[1].replace(/\(UTC([+-])(\d{1,2}):(\d{2})\)/, (_, sign, h, m) => `GMT${sign}${h.padStart(2, "0")}${m}`);
+    return { ...b, text: envelope[2].trim() };
+  });
+  return { ...l, timestamp, message: { ...l.message, content } };
 }
 
 function claudeUser(c) {
@@ -724,7 +777,7 @@ export class Conversation {
       replyTo = u.quoted;
       text = u.rest;
     }
-    this.push({ kind: "user", id, text, replyTo, from: u.from, ...(u.assistant ? { assistant: u.assistant } : {}), at: u.at, images: u.images || 0 });
+    this.push({ kind: "user", id, text, replyTo, from: u.from, ...(u.assistant ? { assistant: u.assistant } : {}), at: u.at, images: u.images || 0, ...(u.cursorOffset != null ? { cursorOffset: u.cursorOffset } : {}) });
     this.doing = null;
   }
 
@@ -893,10 +946,11 @@ export class Conversation {
         if (name) this.step(`big${r.off}`, r.off, claudeStep(name, input) ?? { kind: "tool", line: `Used ${name}`, doing: "Working" });
         continue;
       }
-      const l = parse(r.data);
+      let l = parse(r.data);
       if (!l || typeof l !== "object") continue;
       if (this.kind === "cursor") {
         if (!["user", "assistant"].includes(l.role)) continue;
+        l = cursorMessage(l);
         // Cursor omits results: a new message retires old activity without inventing a result.
         this.open.clear(); this.calls.clear(); this.waits.clear();
         this.doing = null; this.waiting = false;
@@ -938,7 +992,7 @@ export class Conversation {
       if (Array.isArray(l.message?.content) && l.message.content.some((b) => b?.type === "tool_result")) { this.answers(l, off); return; }
       if (l.origin?.kind && l.origin.kind !== "human") return;
       const u = claudeUser(l.message?.content);
-      if (u) this.user(`u${off}`, { ...u, at: time(l.timestamp) });
+      if (u) this.user(`u${off}`, { ...u, at: time(l.timestamp), ...(this.kind === "cursor" ? { cursorOffset: off } : {}) });
     } else if (l.type === "attachment" && l.attachment?.type === "queued_command") {
       // A message typed while the agent was busy, taken in mid-turn.
       const a = l.attachment;
