@@ -74,7 +74,14 @@ def matches(rec, src):
 
 def check(root):
     rec, src, branch, remote, ref, head = source(root)
-    git(src, "fetch", "--no-tags", remote, ref)
+    try:
+        git(src, "fetch", "--no-tags", remote, ref)
+    except UpdateError:
+        _, missing = git(src, "ls-remote", "--exit-code", "--heads", remote, ref, ok=(0, 2))
+        if missing:
+            raise UpdateError("This installation follows an update branch that no longer exists. "
+                              "Switch its checkout to a maintained branch (usually main), then check again.")
+        raise
     target, _ = git(src, "rev-parse", "FETCH_HEAD")
     if source(root)[1:] != (src, branch, remote, ref, head):
         raise UpdateError("The checkout changed during the update check. Check again.")

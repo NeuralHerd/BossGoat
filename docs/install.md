@@ -35,6 +35,10 @@ used for this installation. **Update now** downloads and installs it, with progr
 shown in Settings. The job keeps running if Settings reloads. **What’s new** opens BossGoat’s
 change history. This updates BossGoat on this computer; Herdr has its own updater.
 
+Keep the installation checkout on a maintained branch, normally `main`. After merging a development
+PR, switch the checkout back to `main`; GitHub may delete the PR branch. A missing update branch is
+reported separately from a connection failure.
+
 The updater refuses dirty, detached or diverged source checkouts and never resets your branch.
 It uses the existing installer’s backup and customization rules. From a terminal:
 

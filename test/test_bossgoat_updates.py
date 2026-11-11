@@ -84,6 +84,18 @@ class Updates(unittest.TestCase):
             U.check(str(self.root))
         self.assertEqual(self.run_git("-C", str(self.src), "rev-parse", "HEAD"), before)
 
+    def test_deleted_pr_branch_has_a_recovery_message_without_changing_local_work(self):
+        self.run_git("-C", str(self.src), "switch", "-c", "feature")
+        self.run_git("-C", str(self.src), "push", "-u", "origin", "feature")
+        self.run_git("-C", str(self.publisher), "push", "origin", "--delete", "feature")
+        before = self.run_git("-C", str(self.src), "rev-parse", "HEAD")
+        with self.assertRaisesRegex(U.UpdateError, "branch that no longer exists.*main"):
+            U.check(str(self.root))
+        self.assertEqual(self.run_git("-C", str(self.src), "branch", "--show-current"), "feature")
+        self.assertEqual(self.run_git("-C", str(self.src), "rev-parse", "HEAD"), before)
+        self.run_git("-C", str(self.src), "switch", "main")
+        self.assertEqual(U.check(str(self.root))["state"], "current")
+
     def test_missing_remote_returns_json_error(self):
         self.run_git("-C", str(self.src), "remote", "set-url", "origin", str(self.base / "missing"))
         output = io.StringIO()
