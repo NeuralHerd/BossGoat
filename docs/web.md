@@ -1,18 +1,24 @@
 # The web app
 
+Artifact links are local by default: `herdr-artifact link <id>` serves a read-only viewer on
+`http://127.0.0.1:<port>/bossgoat/`, without Tailscale. Use `--remote` only for access from another
+device through the optional Web add-on. Existing `/shepherdr/` routes remain compatible; new
+remote links use `/bossgoat/`.
+Choose a storage folder with `herdr-artifact location ~/Artifacts`; existing artifacts are preserved.
+
 Shepherdr 3.1 is also a web app: the same spaces, Assistants, tasks, cards, artifacts and settings as the Herdr window,
 on a phone, a tablet or another computer's browser, on the same data. Its look is 2.1's web app; what it does is
 3.0's.
 
 ## Where it is
 
-`https://<this machine's tailnet name>/shepherdr/`, shared only on your tailnet with `tailscale serve` (never funnel,
+`https://<this machine's tailnet name>/bossgoat/`, shared only on your tailnet with `tailscale serve` (never funnel,
 never the open internet); or the always-on machine you serve it from (below). Shepherdr settings → Web shows the link and a QR code for your phone. It needs Tailscale
 running here; without it the service still runs, with no web app.
 
 Another HTTPS port: when something else on this machine already holds the tailnet's 443 (a reverse proxy, a container
 publishing 443, a `tailscale serve --tcp 443` forward), `bossgoat web https-port 8443` moves it to
-`https://<this machine's tailnet name>:8443/shepherdr/` within seconds, and every link Shepherdr gives follows
+`https://<this machine's tailnet name>:8443/bossgoat/` within seconds, and every link Shepherdr gives follows
 (`./install.sh --https-port 8443` sets it at install; updates keep it; `bossgoat web https-port 443` goes back, and
 `bossgoat web https-port` alone says the one now). When sharing fails, Settings → Web and `bossgoat doctor` say
 tailscale's own reason, and name a free port when the one asked for is taken. A port is this machine's own: Serve from
@@ -114,13 +120,13 @@ machine linked over herdr-core (`hc machine add`, or Add machine in the sidebar)
 - **Shepherdr settings → Web → Serve from**, in the window or the web app: this computer and every linked machine, with
   its system and Offline when it is. Pick one and confirm; to move it back, pick This computer.
 - Or from a terminal: `bossgoat web serve-from <machine>` (`here` moves it back), `bossgoat web status`. Its
-  `/shepherdr` already shared to something else there: `--take-link` sets that aside, and moving away puts it back.
+  `/bossgoat` already shared to something else there: `--take-link` sets that aside, and moving away puts it back.
 
 What a move does, in order: installs Shepherdr's web service on that machine over the link, or brings it up to date
 (`~/.local/share/shepherdr`, under launchd on macOS or a systemd user unit on Linux; Bun from bun.sh when it has
 none; what it replaces is backed up and `bossgoat uninstall` there puts it back), copies the pins, sidebar, Notify,
 settings and role instructions over, then tells every machine. The new one shares
-`https://<its tailnet name>/shepherdr/` (127.0.0.1 only, never Funnel), the old one stops sharing its link, and
+`https://<its tailnet name>/bossgoat/` (127.0.0.1 only, never Funnel), the old one stops sharing its link, and
 Settings → Web shows the new link and its QR code everywhere. It needs Python 3.8+, herdr-core and Tailscale there.
 
 ### One truth, wherever it is served
@@ -151,7 +157,7 @@ Settings → Web shows the new link and its QR code everywhere. It needs Python 
 | Push alerts to phones | the host only (the pages subscribe there) |
 | A web page's question cards (the ask flag; the cards read and answered there) | the host, on the agent's machine through the link |
 | Serving secrets to another machine's agents | the machine holding the vault (herdr-secret refuses elsewhere) |
-| Sharing `/shepherdr` on the tailnet | the host only |
+| Sharing `/bossgoat` on the tailnet | the host only |
 
 Phones subscribed to the old link's alerts subscribe again on the new one (a push subscription belongs to its
 address). The window's machine shows the host's link; the service there answers its own window only.

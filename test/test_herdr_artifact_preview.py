@@ -73,8 +73,8 @@ class Preview(unittest.TestCase):
 
     def test_serves_the_viewer_and_the_artifact_on_loopback_only(self):
         link = self.preview()
-        self.assertRegex(link, r"^http://127\.0\.0\.1:\d+/\?artifact=" + self.aid + "$")
-        base = link.split("/?")[0]
+        self.assertRegex(link, r"^http://127\.0\.0\.1:\d+/bossgoat/\?artifact=" + self.aid + "$")
+        base = link.split("/bossgoat/?")[0] + "/bossgoat"
         code, headers, body = get(link)
         self.assertEqual((code, body.decode()), (200, PAGE))
         self.assertIn("connect-src 'self'", headers["content-security-policy"])

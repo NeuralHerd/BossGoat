@@ -83,6 +83,43 @@ class Artifacts(unittest.TestCase):
         self.assertEqual(a["files"], ["recipe.json"])
         self.assertEqual(a["versions"][-1]["kind"], "recipe")
 
+    def test_custom_location_preserves_existing_artifacts_and_unrelated_files(self):
+        recipe = os.path.join(self.dir, "recipe")
+        with mock.patch("sys.stdout"):
+            A.cmd_new(types.SimpleNamespace(dir=recipe, custom=False))
+        self.publish(recipe, title="Proof")
+        aid = self.only()[0]["id"]
+        target = os.path.join(self.dir, "Artifacts")
+        os.makedirs(target)
+        keep = os.path.join(target, "existing.html")
+        with open(keep, "w") as f:
+            f.write("keep this")
+        with mock.patch("sys.stdout"), A.location_guard(exclusive=True):
+            A.cmd_location(types.SimpleNamespace(dir=target, json=True))
+        self.assertEqual(os.path.realpath(A.STORE), target)
+        self.assertEqual(self.record(aid)["title"], "Proof")
+        with open(keep) as f:
+            self.assertEqual(f.read(), "keep this")
+        self.publish(recipe, title="Next")
+        self.assertEqual(len(self.only()), 2)
+        self.assertTrue(os.path.isfile(os.path.join(target, "files", aid, "v1", "recipe.json")))
+        self.assertTrue(any(n.startswith("store.before-location-") for n in os.listdir(self.dir)))
+
+    def test_custom_location_refuses_collisions_and_nested_folders(self):
+        os.makedirs(A.FILES)
+        target = os.path.join(self.dir, "Artifacts")
+        os.makedirs(os.path.join(target, "files"))
+        with self.assertRaisesRegex(A.Fail, "Nothing moved"):
+            A.cmd_location(types.SimpleNamespace(dir=target, json=True))
+        with self.assertRaisesRegex(A.Fail, "outside"):
+            A.cmd_location(types.SimpleNamespace(dir=os.path.join(A.STORE, "nested"), json=True))
+        self.assertFalse(os.path.islink(A.STORE))
+
+    def test_location_change_waits_for_other_artifact_commands(self):
+        with A.location_guard(), self.assertRaisesRegex(A.Fail, "command is running"):
+            with A.location_guard(exclusive=True):
+                self.fail("A location change must not race another command")
+
     def test_a_custom_panel_needs_custom(self):
         d = self.panel()
         with self.assertRaisesRegex(A.Fail, "recipe"):

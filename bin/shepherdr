@@ -1434,8 +1434,9 @@ def serve_check(root):
         p = subprocess.run([tailscale, "serve", "status", "--json"], capture_output=True, text=True)
         try:
             for web in (json.loads(p.stdout or "{}").get("Web") or {}).values():
-                if ((web.get("Handlers") or {}).get("/shepherdr") or {}).get("Proxy", "").endswith(f":{our_port(root)}"):
-                    bad.append(f"/shepherdr is still shared from here while {host} serves it: two links")
+                for mount in ("/bossgoat", "/shepherdr"):
+                    if ((web.get("Handlers") or {}).get(mount) or {}).get("Proxy", "").endswith(f":{our_port(root)}"):
+                        bad.append(f"{mount} is still shared from here while {host} serves it: two links")
         except ValueError:
             pass
     return bad, notes
@@ -1738,10 +1739,13 @@ def restore_share(root):
     tailscale = shutil.which("tailscale")
     if not tailscale or not str(old.get("port", "")).isdigit() or not str(old.get("proxy", "")).startswith("http://127.0.0.1:"):
         return
-    subprocess.run([tailscale, "serve", f"--https={old['port']}", "--set-path", "/shepherdr", "off"], capture_output=True)
-    if subprocess.run([tailscale, "serve", "--bg", f"--https={old['port']}", "--set-path", "/shepherdr", old["proxy"]], capture_output=True).returncode == 0:
+    mount = old.get("mount", "/shepherdr")
+    if mount not in ("/bossgoat", "/shepherdr"):
+        return
+    subprocess.run([tailscale, "serve", f"--https={old['port']}", "--set-path", mount, "off"], capture_output=True)
+    if subprocess.run([tailscale, "serve", "--bg", f"--https={old['port']}", "--set-path", mount, old["proxy"]], capture_output=True).returncode == 0:
         os.remove(f)
-        say(f"  /shepherdr is shared to {old['proxy']} again, as before")
+        say(f"  {mount} is shared to {old['proxy']} again, as before")
 
 
 def web_source():
@@ -2003,7 +2007,7 @@ def main(argv):
     w = sub.add_parser("web", help="where the web app is served from (Serve from)")
     w.add_argument("action", choices=["serve-from", "status", "install-on", "https-port"])
     w.add_argument("machine", nargs="?", help="a machine linked over herdr-core (hc machine ls), or here; https-port: the port")
-    w.add_argument("--take-link", action="store_true", help="that machine's /shepherdr is shared to something else: set it aside (moving away puts it back)")
+    w.add_argument("--take-link", action="store_true", help="that machine's /bossgoat is shared to something else: set it aside (moving away puts it back)")
     w.add_argument("--json", action="store_true")
     s = sub.add_parser("secrets", help="which machine keeps the secrets (Settings › Secrets › Kept on)")
     s.add_argument("action", choices=["move-to", "where"])

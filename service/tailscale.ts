@@ -1,5 +1,5 @@
-// The tailnet side: who owns this machine, its name, and sharing /shepherdr privately with tailscale serve.
-// Never funnel: serving stops when Funnel is on for the port /shepherdr is served on.
+// The tailnet side: who owns this machine, its name, and sharing /bossgoat privately with tailscale serve.
+// Never funnel: serving stops when Funnel is on for the port /bossgoat is served on.
 // The HTTPS port it is shared on: 443, or the one this machine set (shepherdr web https-port, install --https-port),
 // kept in the service's folder as https-port; read at each look, so a change needs no restart.
 import { readFileSync } from "node:fs";
@@ -23,7 +23,7 @@ export function httpsPort(file = HTTPS_PORT_FILE): number {
 
 /** The web app's origin on the tailnet: https://<machine>, with :<port> when it isn't 443. */
 export const webOrigin = (dns: string, hp = DEFAULT_HTTPS) => (hp === DEFAULT_HTTPS ? `https://${dns}` : `https://${dns}:${hp}`);
-/** The web app's link: <origin>/shepherdr/. */
+/** The web app's link: <origin>/bossgoat/. */
 export const webLink = (dns: string, hp = DEFAULT_HTTPS) => `${webOrigin(dns, hp)}${MOUNT}/`;
 
 async function run(args: string[]): Promise<{ ok: boolean; out: string; err: string }> {
@@ -64,15 +64,15 @@ export async function whoami(): Promise<Me | null> {
 
 export type Served = { proxy: string | null; port: string | null; funnel: boolean };
 
-/** What tailscale serve does with /shepherdr now: its target, the HTTPS port, and whether Funnel is on there. */
-export async function served(dns: string, status?: any): Promise<Served> {
+/** What tailscale serve does with /bossgoat now: its target, the HTTPS port, and whether Funnel is on there. */
+export async function served(dns: string, status?: any, mount = MOUNT): Promise<Served> {
   const none = { proxy: null, port: null, funnel: false };
   try {
     const s = status ?? (await serveStatus());
     for (const [hostPort, web] of Object.entries<any>(s.Web ?? {})) {
       const [host, port] = hostPort.split(":");
       if (host !== dns) continue;
-      const h = web?.Handlers?.[MOUNT];
+      const h = web?.Handlers?.[mount];
       if (h) return { proxy: h.Proxy ?? null, port, funnel: !!s.AllowFunnel?.[hostPort] };
     }
     return none;
@@ -86,7 +86,7 @@ export async function funnelAnywhere(): Promise<boolean> {
 }
 
 /** Who else holds HTTPS port hp on this machine's tailnet name, in tailscale serve's status: a TCP forward (another
- *  app's raw proxy) or plain TCP; null when it is free or already Tailscale's HTTPS (/shepherdr can join it). */
+ *  app's raw proxy) or plain TCP; null when it is free or already Tailscale's HTTPS (/bossgoat can join it). */
 export function heldBy(status: any, hp: number): string | null {
   const t = status?.TCP?.[String(hp)];
   if (!t) return null;
@@ -112,7 +112,7 @@ export function shareProblem(status: any, hp: number, err = ""): string {
   return `tailscale serve failed${said ? `: ${said}` : ""}` + (busy ? ` Port ${hp} may be taken. ${fix}` : "");
 }
 
-/** Shares 127.0.0.1:<port> at https://<machine>[:<hp>]/shepherdr. Refuses to replace /shepherdr when it points
+/** Shares 127.0.0.1:<port> at https://<machine>[:<hp>]/bossgoat. Refuses to replace /bossgoat when it points
  *  elsewhere. Ours on another HTTPS port (the setting changed) moves to hp: the old share goes once the new one is up.
  *  Returns null, or why it isn't shared (tailscale's own words, and another port when hp is taken). */
 export async function share(dns: string, port: number, hp = DEFAULT_HTTPS): Promise<string | null> {
@@ -129,19 +129,23 @@ export async function share(dns: string, port: number, hp = DEFAULT_HTTPS): Prom
   return null;
 }
 
-/** Stops sharing /shepherdr. port: only when it leads to this service (another one's share is left alone). */
+/** Stops sharing /bossgoat. port: only when it leads to this service (another one's share is left alone). */
 export async function unshare(dns: string, port?: number): Promise<void> {
-  const now = await served(dns);
-  if (now.proxy && (port === undefined || now.proxy === `http://127.0.0.1:${port}`)) await run(["serve", `--https=${now.port ?? 443}`, "--set-path", MOUNT, "off"]);
+  for (const mount of [MOUNT, "/shepherdr"]) {
+    const now = await served(dns, undefined, mount);
+    if (now.proxy && (port === undefined || now.proxy === `http://127.0.0.1:${port}`)) await run(["serve", `--https=${now.port ?? 443}`, "--set-path", mount, "off"]);
+  }
 }
 
 /** What a move here set aside (shepherdr web serve-from --take-link: ~/.local/state/shepherdr/service/replaced-share.json), shared
  *  again once this machine no longer serves the web app. */
 export async function restoreShare(file: string): Promise<boolean> {
-  let r: { port?: string; proxy?: string } | null = null;
+  let r: { port?: string; proxy?: string; mount?: string } | null = null;
   try { r = JSON.parse(await Bun.file(file).text()); } catch { return false; }
   if (!r?.proxy || !/^\d+$/.test(String(r.port)) || !/^https?:\/\/127\.0\.0\.1:\d+\/?$/.test(r.proxy)) return false;
-  const ok = (await run(["serve", "--bg", `--https=${r.port}`, "--set-path", MOUNT, r.proxy])).ok;
+  const mount = r.mount ?? "/shepherdr";
+  if (![MOUNT, "/shepherdr"].includes(mount)) return false;
+  const ok = (await run(["serve", "--bg", `--https=${r.port}`, "--set-path", mount, r.proxy])).ok;
   if (ok) try { (await import("node:fs")).unlinkSync(file); } catch {}
   return ok;
 }

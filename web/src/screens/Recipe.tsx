@@ -1,7 +1,8 @@
 // An artifact's recipe drawn as the web's own HTML (core/recipe.js says what each block is; the window draws the same
-// file in GPUI). In 2.1's look: its tokens, type and corners; charts as SVG; Markdown through the chat's renderer.
+// file in GPUI). HolyCow's light document style; charts as SVG; Markdown through the chat's safe renderer.
 // A choice, a form or a button sends its words to the agent that made it (reply), once: then it says "Sent", as the
 // window's (mods/artifacts/recipe-view.js). Mark up lays its own layer over the whole recipe (plugins/artifacts).
+import './artifact.css'
 import clsx from 'clsx'
 import { useState, type ReactNode } from 'react'
 import { ArrowUpRightIcon } from '@heroicons/react/16/solid'
@@ -10,13 +11,13 @@ import { Primary } from '../ui.tsx'
 import * as R from '@core/recipe.js'
 
 type Block = any
-type Props = { recipe: { blocks: Block[] }; asset: (src: string) => string; reply?: (text: string) => Promise<unknown> }
+type Props = { heading?: string; recipe: { blocks: Block[] }; asset: (src: string) => string; reply?: (text: string) => Promise<unknown> }
 
 /** the window's words when a recipe can't be read */
 export const UNREADABLE = "This artifact's recipe can't be read."
 
 const { chartShapes, choiceReply, formReply, isLink } = R as any
-const PALETTE = ['var(--accent)', 'var(--focus)', 'var(--ready)', 'var(--work)', 'var(--merged)', 'var(--need)']
+const PALETTE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
 const TONE: Record<string, string> = { info: 'bg-well shadow-soft', good: 'bg-ready/10', warn: 'bg-work/12', bad: 'bg-need/10' }
 
 function Chart({ b }: { b: Block }) {
@@ -127,17 +128,18 @@ function Tabs({ b, render }: { b: Block; render: (bs: Block[]) => ReactNode }) {
   )
 }
 
-export function Recipe({ recipe, asset, reply }: Props) {
+export function Recipe({ heading, recipe, asset, reply }: Props) {
+  const headings = recipe.blocks.filter((b) => b.type === 'heading')
   const one = (b: Block): ReactNode => {
     switch (b.type) {
       case 'heading': { const H = (`h${Math.min(3, Math.max(1, b.level ?? 2)) + 1}`) as 'h2'; return <H className={clsx('font-semibold text-balance', (b.level ?? 2) <= 1 ? 'text-xl' : 'text-base')}>{b.text}</H> }
       case 'text': return <Markdown text={b.md} />
       case 'list': { const L = b.ordered ? 'ol' : 'ul'; return <L className={clsx('flex flex-col gap-1 pl-5', b.ordered ? 'list-decimal' : 'list-disc')}>{b.items.map((x: string, i: number) => <li key={i}><Markdown text={x} /></li>)}</L> }
       case 'table': return (
-        <div className="overflow-x-auto rounded-box shadow-box">
+        <div className="artifact-table" role="region" aria-label="Data table" tabIndex={0}>
           <table className="w-full border-collapse">
-            <thead><tr>{b.columns.map((c: any, i: number) => <th key={i} className={clsx('border-b border-line px-3 py-2 text-left font-medium text-fg2', (c.align ?? '') === 'right' && 'text-right')}>{c.label ?? c}</th>)}</tr></thead>
-            <tbody>{b.rows.map((r: unknown[], i: number) => <tr key={i} className="border-b border-line last:border-0">{r.map((c, j) => <td key={j} className={clsx('px-3 py-2 align-top', b.columns[j]?.align === 'right' && 'text-right tabular-nums')}>{String(c ?? '')}</td>)}</tr>)}</tbody>
+            <thead><tr>{b.columns.map((c: any, i: number) => <th key={i} scope="col" className={clsx('border-b border-line px-3 py-2 text-left font-medium text-fg2', (c.align ?? '') === 'right' && 'text-right')}>{c.label ?? c}</th>)}</tr></thead>
+            <tbody>{b.rows.map((r: unknown[], i: number) => <tr key={i} className="border-b border-line last:border-0">{r.map((c, j) => <td key={j} data-label={b.columns[j]?.label ?? b.columns[j]} className={clsx('px-3 py-2 align-top', b.columns[j]?.align === 'right' && 'text-right tabular-nums')}>{typeof c === 'string' ? <Markdown text={c} /> : String(c ?? '')}</td>)}</tr>)}</tbody>
           </table>
         </div>
       )
@@ -159,9 +161,17 @@ export function Recipe({ recipe, asset, reply }: Props) {
     return null
   }
   const wrap = (b: Block) => (
-    <section key={b.id} data-block={b.id} className="min-w-0">
+    <section key={b.id} id={`artifact-${b.id}`} data-block={b.id} data-kind={b.type} className="min-w-0">
       {one(b)}
     </section>
   )
-  return <div className="@container flex flex-col gap-4 text-base/7 text-fg sm:text-sm/6">{recipe.blocks.map(wrap)}</div>
+  return <article className="holycow-artifact @container">
+    <div className="artifact-document">
+      {heading ? <header className="artifact-heading"><p className="artifact-eyebrow">BossGoat · Artifact</p><h1><span>{heading}</span></h1></header> : null}
+      {headings.length > 2 ? <nav className="artifact-contents" aria-label="On this page">{headings.map((b, i) =>
+        <a key={b.id} href={`#artifact-${b.id}`} onClick={(e) => { e.preventDefault(); e.currentTarget.closest('article')?.querySelectorAll<HTMLElement>('[data-block]').forEach((el) => { if (el.dataset.block === String(b.id)) el.scrollIntoView({ block: 'start' }) }) }}><span>{String(i + 1).padStart(2, '0')}</span>{b.text}</a>
+      )}</nav> : null}
+      <div className="artifact-blocks">{recipe.blocks.map(wrap)}</div>
+    </div>
+  </article>
 }

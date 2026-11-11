@@ -8,7 +8,7 @@ const at = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
 writeRegistry(at('./'))
 
-// Relative base: the app works under any path (tailscale serve --set-path /shepherdr).
+// Relative base: the app works under any path (tailscale serve --set-path /bossgoat).
 export default defineConfig({
   root: at('./'),
   base: './',

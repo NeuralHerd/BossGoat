@@ -2,12 +2,12 @@
 // this with Bun; Settings › Web's Serve from runs that). In order:
 //   1. Shepherdr's web service there, installed or brought up to date (shepherdr web install-on, over herdr-core's link),
 //      and running (its node record says so);
-//   2. with --take-link, /shepherdr on that machine's tailnet name shared to something else is set aside (kept in
+//   2. with --take-link, /bossgoat on that machine's tailnet name shared to something else is set aside (kept in
 //      replaced-share.json in the service's folder there; moving away again puts it back);
 //   3. the shared document, the settings file and the role instructions copied from the machine serving now, in the
 //      new one's words (core/host.js);
 //   4. the host record, newer, written here and on every machine linked from here; each service follows it: the new
-//      host shares /shepherdr, the old one stops, the others read and write their shared data there;
+//      host shares /bossgoat, the old one stops, the others read and write their shared data there;
 //   5. the new link, once the new host says it.
 // shepherdr web status [--json]: which machine serves it now and its link.
 import { CoreClient } from "./hc/client.ts";
@@ -121,17 +121,17 @@ s = json.load(sys.stdin)
 try: port = int(json.load(open(os.path.join(os.environ["SHEP_SERVICE"], "service.json")))["port"])
 except Exception: port = 7788
 for hp, web in (s.get("Web") or {}).items():
-    h = (web.get("Handlers") or {}).get("/shepherdr")
+    h = (web.get("Handlers") or {}).get("/bossgoat")
     if h and h.get("Proxy") and not h["Proxy"].endswith(f":{port}"):
         print(hp.rsplit(":", 1)[1], h["Proxy"])
 ' > "$f.tmp" || true
-if [ -s "$f.tmp" ]; then read port proxy < "$f.tmp"; printf '{"port":"%s","proxy":"%s","at":%s}\\n' "$port" "$proxy" "$(date +%s)" > "$f"
-  tailscale serve --https="$port" --set-path /shepherdr off >/dev/null; echo "took $proxy"; fi
+if [ -s "$f.tmp" ]; then read port proxy < "$f.tmp"; printf '{"port":"%s","proxy":"%s","mount":"/bossgoat","at":%s}\\n' "$port" "$proxy" "$(date +%s)" > "$f"
+  tailscale serve --https="$port" --set-path /bossgoat off >/dev/null; echo "took $proxy"; fi
 rm -f "$f.tmp"`;
 if (take) {
   const r = await exec(["sh", "-c", `PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/Applications/Tailscale.app/Contents/MacOS:$PATH"; ${TAKE}`], to);
-  if (r.code !== 0) fail(`couldn't set aside /shepherdr on ${to ?? "this computer"}: ${r.stderr.trim()}`);
-  if (r.stdout.trim()) say(`/shepherdr on ${to ?? "this computer"} was shared to ${r.stdout.trim().slice(5)}: set aside (moving away puts it back).`);
+  if (r.code !== 0) fail(`couldn't set aside /bossgoat on ${to ?? "this computer"}: ${r.stderr.trim()}`);
+  if (r.stdout.trim()) say(`/bossgoat on ${to ?? "this computer"} was shared to ${r.stdout.trim().slice(5)}: set aside (moving away puts it back).`);
 }
 
 // ---- 3. the shared data, in the new host's words ------------------------------------------------------------------

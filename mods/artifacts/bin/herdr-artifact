@@ -64,6 +64,8 @@ APP = os.environ.get("HERDR_APP_HOME") or os.path.join(HOME, ".config", "herdr-a
 GUIDE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "ARTIFACTS.md")
 # Mark up (the person points at a spot and writes to the agent), laid over every installed artifact.
 MARKUP = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "markup.js")
+MARKUP_DIRS = os.path.join(os.path.dirname(MARKUP), "dirs.js")
+MARKUP_PATHS = os.path.join(os.path.dirname(MARKUP), "core", "paths.js")
 # A recipe artifact (recipe.json, Shepherdr 3.1) is drawn by the shared recipe view: copied into its installed mod.
 RECIPE_VIEW = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "recipe-view.js")
 RECIPE_CORE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "core", "recipe.js")
@@ -80,7 +82,7 @@ MAX_FILES = 200
 MAX_BYTES = 4 * 1024 * 1024
 # What a mod folder may hold: code, text and pictures. No binaries, no node_modules.
 ALLOWED = {".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".md", ".txt", ".csv", ".ttf", ".otf"}
-SKIP = {"jsconfig.json", "gpui-kit.d.ts", "herdr.d.ts", "artifact.js", "artifact-main.js", "artifact-markup.js", ".version"}
+SKIP = {"jsconfig.json", "gpui-kit.d.ts", "herdr.d.ts", "artifact.js", "artifact-main.js", "artifact-markup.js", "artifact-dirs.js", "artifact-paths.js", ".version"}
 
 
 class Fail(Exception):
@@ -360,11 +362,20 @@ def copy_files(src, files, dst):
         shutil.copyfile(os.path.join(src, rel), os.path.join(dst, rel))
 
 
+ARTIFACT_THEME = {
+    "background": "#f9f9fa", "foreground": "#1d1d1f", "muted": "#606062", "dim": "#606062",
+    "surface": "#ffffff", "border": "#1d1d1f21", "accent": "#0070d9", "working": "#ffa641",
+    "done": "#1fa368", "blocked": "#ff7c5b", "solid": "#111413", "solid_foreground": "#f5f5f7",
+    "chart": ["#0070d9", "#1fa368", "#ff7c5b", "#884de6", "#ffa641"],
+}
+
+
 def helper(art, mod, agent, machine=None, custom=False):
     """artifact.js, written into the installed mod: who made it and how to answer them."""
     return f"""// Written by herdr-artifact each time this artifact is installed. Don't edit: it's replaced.
 import {{ hc }} from "herdr";
 
+export const theme = () => ({json.dumps(ARTIFACT_THEME)});
 export const id = {json.dumps(art["id"])};
 export const title = {json.dumps(art["title"])};
 export const version = {art["version"]};
@@ -415,7 +426,15 @@ def wrap_markup(dst):
     if not os.path.isfile(MARKUP):
         return
     os.replace(os.path.join(dst, "main.js"), os.path.join(dst, "artifact-main.js"))
-    shutil.copyfile(MARKUP, os.path.join(dst, "artifact-markup.js"))
+    for src, name, old, new in (
+        (MARKUP, "artifact-markup.js", '"./dirs.js"', '"./artifact-dirs.js"'),
+        (MARKUP_DIRS, "artifact-dirs.js", '"./core/paths.js"', '"./artifact-paths.js"'),
+        (MARKUP_PATHS, "artifact-paths.js", "", ""),
+    ):
+        with open(src) as f:
+            text = f.read()
+        with open(os.path.join(dst, name), "w") as f:
+            f.write(text.replace(old, new) if old else text)
     with open(os.path.join(dst, "main.js"), "w") as f:
         f.write(WRAPPER)
 
@@ -967,20 +986,26 @@ def cmd_pack(o):
 
 def markup_hash():
     try:
-        with open(MARKUP, "rb") as f:
-            return hashlib.sha1(f.read()).hexdigest()[:12]
+        h = hashlib.sha1()
+        for path in (MARKUP, MARKUP_DIRS, MARKUP_PATHS, RECIPE_VIEW, RECIPE_CORE):
+            with open(path, "rb") as f:
+                h.update(f.read())
+        h.update(json.dumps(ARTIFACT_THEME, sort_keys=True).encode())
+        return h.hexdigest()[:12]
     except OSError:
         return ""
 
 
 def current(mod, version):
-    """Whether the installed mod is this version with this app's Mark up."""
+    """Whether the installed mod is this version with this app's renderer and Mark up."""
     try:
         with open(os.path.join(APP, "mods", mod, ".version")) as f:
             got = f.read().split()
     except OSError:
         return False
     h = markup_hash()
+    if h and not all(os.path.isfile(os.path.join(APP, "mods", mod, f)) for f in ("artifact-dirs.js", "artifact-paths.js")):
+        return False
     return got == [str(version), h] if h else got[:1] == [str(version)]
 
 
@@ -1524,9 +1549,12 @@ def core_doc(name):
 def web_base():
     """The web app's link (its tailnet address, ".../shepherdr/"), or None: the host's word here, else what
     this machine's own service says (its web.json)."""
-    for get in (lambda: core_doc(WEB_DOC), lambda: json.load(open(WEB_JSON))):
+    for get in (lambda: json.load(open(WEB_JSON)), lambda: core_doc(WEB_DOC)):
         try:
-            link = (get() or {}).get("link")
+            state = get() or {}
+            if state.get("on") is False:
+                return None
+            link = state.get("link")
         except (OSError, ValueError, AttributeError):
             link = None
         if isinstance(link, str) and link.startswith("https://"):
@@ -1539,8 +1567,8 @@ def web_link(aid):
     return f"{base}?artifact={urllib.parse.quote(aid, safe='')}" if base else None
 
 
-NO_LINK = ("No web link is known here yet: Shepherdr's web app isn't served, or the machine serving it hasn't "
-           "linked this one (`shepherdr web status` there says).")
+NO_LINK = ("No web link is known here yet: BossGoat's optional web app isn't served, or the machine serving it hasn't "
+           "linked this one (`bossgoat web status` there says).")
 
 
 def known(aid, machine):
@@ -1551,9 +1579,7 @@ def known(aid, machine):
 
 def cmd_link(o):
     known(o.id, o.machine)
-    link = web_link(o.id)
-    if not link:
-        raise Fail(NO_LINK)
+    link = artifact_link(o)
     print(json.dumps({"id": o.id, "link": link}) if o.json else link)
     return 0
 
@@ -1585,13 +1611,12 @@ def open_window(o):
 
 
 def cmd_open(o):
-    """Shows an artifact to the person wherever they are: the web app's page they use opens it, the Herdr window here
-    too (when there is one), and its link is printed, which always works."""
+    """Opens locally by default; --remote asks the person's web app instead."""
     known(o.id, o.machine)
-    link = web_link(o.id)
-    screen = ask_screen(o.id)
+    link = artifact_link(o)
+    screen = ask_screen(o.id) if o.remote else False
     try:
-        window, why = open_window(o), None
+        window, why = (None if o.remote else open_window(o)), None
     except Fail as e:
         window, why = None, str(e)
     if o.json:
@@ -1723,6 +1748,7 @@ def serve_preview(idle=PREVIEW_IDLE):
             u = urllib.parse.urlsplit(self.path)
             q = urllib.parse.parse_qs(u.query)
             path = urllib.parse.unquote(u.path)
+            path = re.sub(r"^/(?:bossgoat|shepherdr)(?=/|$)", "", path) or "/"
             if path == "/api/ping":
                 return self.json(200, {"store": STORE, "code": code_stamp()})
             if path in ("/", "/index.html"):
@@ -1781,14 +1807,91 @@ def serve_preview(idle=PREVIEW_IDLE):
     return 0
 
 
-def cmd_preview(o):
-    """This machine's artifact in the web app's viewer, served here on 127.0.0.1: its link, for the task's browser."""
-    with Store(find_anywhere(o.id), write=False) as s:
-        as_version(s.find(o.id), o.version)
+@contextlib.contextmanager
+def location_guard(exclusive=False):
+    parent = os.path.dirname(STORE)
+    os.makedirs(parent, exist_ok=True)
+    with open(os.path.join(parent, ".artifacts-location.lock"), "a") as lock:
+        try:
+            fcntl.flock(lock, (fcntl.LOCK_EX | fcntl.LOCK_NB) if exclusive else fcntl.LOCK_SH)
+        except BlockingIOError:
+            raise Fail("An artifact command is running. Try changing the location again after it finishes.")
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def cmd_location(o):
+    """Choose this machine's artifact folder; existing readers keep using the compatibility link."""
+    source = os.path.realpath(STORE)
+    target = os.path.realpath(os.path.expanduser(o.dir)) if o.dir else source
+    backup = None
+    if target != source:
+        if os.path.commonpath((source, target)) in (source, target):
+            raise Fail("Choose a folder outside the current artifact folder, not one of its parents.")
+        if os.path.lexists(target) and not os.path.isdir(target):
+            raise Fail("The artifact location must be a folder.")
+        entries = [n for n in os.listdir(source) if n != ".preview"] if os.path.isdir(source) else []
+        clashes = [n for n in entries if os.path.lexists(os.path.join(target, n))]
+        if clashes:
+            raise Fail("Nothing moved: the destination already contains " + ", ".join(clashes))
+        port = preview_alive()
+        if port:
+            with open(PREVIEW_STATE) as f:
+                os.kill(int(json.load(f)["pid"]), signal.SIGTERM)
+        os.makedirs(target, exist_ok=True)
+        for name in entries:
+            src, dst = os.path.join(source, name), os.path.join(target, name)
+            if os.path.isdir(src) and not os.path.islink(src):
+                shutil.copytree(src, dst, symlinks=True)
+            elif os.path.islink(src):
+                os.symlink(os.readlink(src), dst)
+            else:
+                shutil.copy2(src, dst)
+        link = STORE + ".location-" + secrets.token_hex(4)
+        os.makedirs(os.path.dirname(STORE), exist_ok=True)
+        os.symlink(target, link)
+        try:
+            if os.path.isdir(STORE) and not os.path.islink(STORE):
+                backup = STORE + ".before-location-" + str(now())
+                os.rename(STORE, backup)
+            os.replace(link, STORE)
+        except OSError:
+            if backup and not os.path.lexists(STORE):
+                os.rename(backup, STORE)
+            raise
+        finally:
+            if os.path.lexists(link):
+                os.unlink(link)
+    out = {"directory": target, **({"backup": backup} if backup else {})}
+    print(json.dumps(out) if o.json else f"Artifact folder: {target}" + (f"\nPrevious files kept in: {backup}" if backup else ""))
+    return 0
+
+
+def local_link(aid, version=None):
+    with Store(find_anywhere(aid), write=False) as s:
+        as_version(s.find(aid), version)
     if not viewer_page():
         raise Fail(NO_VIEWER)
     port = preview_start()
-    link = f"http://127.0.0.1:{port}/?artifact={urllib.parse.quote(o.id, safe='')}" + (f"&v={o.version}" if o.version else "")
+    return f"http://127.0.0.1:{port}/bossgoat/?artifact={urllib.parse.quote(aid, safe='')}" + (f"&v={version}" if version else "")
+
+
+def artifact_link(o):
+    if o.remote:
+        link = web_link(o.id)
+        if not link:
+            raise Fail(NO_LINK)
+        return link
+    if o.machine:
+        raise Fail("An artifact on another machine needs --remote. Local links only serve this machine's artifacts.")
+    return local_link(o.id)
+
+
+def cmd_preview(o):
+    """This machine's artifact in the web app's viewer, served here on 127.0.0.1."""
+    link = local_link(o.id, o.version)
     if o.json:
         print(json.dumps({"id": o.id, "link": link}))
     else:
@@ -1801,8 +1904,7 @@ def cmd_preview(o):
 
 EXAMPLE = '''import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme } from "herdr";
-import { reply } from "./artifact.js";
+import { theme, reply } from "./artifact.js";
 
 // No title here: the viewer shows it right above this panel.
 export default class Artifact extends View {
@@ -1810,7 +1912,7 @@ export default class Artifact extends View {
 
   render() {
     const t = theme();
-    return v_flex().size_full().p(16).gap(12).bg(t.background).text_color(t.foreground).text_size(13)
+    return v_flex().size_full().p(24).gap(20).bg(t.background).text_color(t.foreground).text_size(16)
       .child(div().text_color(t.muted).child("Replace this with what you want to show."))
       .child(h_flex().gap(8)
         .child(div().id("ok").px(12).py(6).rounded(6).bg(t.solid).text_color(t.solid_foreground)
@@ -1977,15 +2079,19 @@ def main():
     cmd("guide", cmd_guide, "how to write an artifact")
     c = cmd("where", cmd_where, "where a folder's artifacts are listed")
     c.add_argument("--folder")
-    c = cmd("open", cmd_open, "show an artifact to the person, wherever they are (their web app page, the window here), and print its link")
+    c = cmd("open", cmd_open, "open an artifact locally and print its local link; --remote uses the web app")
     c.add_argument("id")
     c.add_argument("--from", dest="machine", help="the machine it's on (default: this one)")
     c.add_argument("--beside", help="in the window: a pane to open it beside (default: the focused one)")
     c.add_argument("--direction", default="right", choices=["right", "down"])
     c.add_argument("--tab", action="store_true", help="in the window: in a new tab instead")
-    c = cmd("link", cmd_link, "an artifact's link in the web app, for the person")
+    c.add_argument("--remote", action="store_true", help="use the optional Tailscale web app instead of this machine")
+    c = cmd("link", cmd_link, "a local artifact link; --remote prints its Tailscale web link")
     c.add_argument("id")
     c.add_argument("--from", dest="machine", help="the machine it's on (default: this one)")
+    c.add_argument("--remote", action="store_true", help="use the optional Tailscale web app instead of this machine")
+    c = cmd("location", cmd_location, "show or choose this machine's artifact folder, preserving existing artifacts")
+    c.add_argument("dir", nargs="?", help="the local folder to use; existing files are never overwritten")
     c = cmd("preview", cmd_preview, "see an artifact here as the person sees it: the web app's viewer on 127.0.0.1, for your task's browser")
     c.add_argument("id")
     c.add_argument("--version", type=int, help="an older version (default: the latest)")
@@ -2019,7 +2125,10 @@ def main():
         p.print_help()
         return 0
     try:
-        return o.fn(o)
+        if o.cmd == "_serve":
+            return o.fn(o)
+        with location_guard(exclusive=o.cmd == "location" and bool(o.dir)):
+            return o.fn(o)
     except Fail as e:
         if getattr(o, "json", False):
             print(json.dumps({"error": str(e)}))

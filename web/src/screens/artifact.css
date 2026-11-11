@@ -1,0 +1,106 @@
+/* HolyCow / Eden document palette, scoped so artifacts stay light inside any app appearance. */
+.holycow-artifact, .artifact-viewer {
+  color-scheme: light;
+  --ink: #1d1d1f;
+  --ink-80: #1d1d1fcc;
+  --ink-70: #1d1d1fb3;
+  --background: #f9f9fa;
+  --background-secondary: #f5f5f7;
+  --card: #ffffff;
+  --border: #1d1d1f21;
+  --primary: #111413;
+  --accent-blue: #0070d9;
+  --chart-1: #0070d9;
+  --chart-2: #1fa368;
+  --chart-3: #ff7c5b;
+  --chart-4: #884de6;
+  --chart-5: #ffa641;
+  --bg: var(--card);
+  --fg: var(--ink);
+  --fg2: var(--ink-80);
+  --fg3: var(--ink-70);
+  --line: var(--border);
+  --line2: var(--border);
+  --well: var(--background-secondary);
+  --hover: #1d1d1f0a;
+  --sel: #e3f0e6;
+  --seg-on: var(--card);
+  --focus: var(--accent-blue);
+  --accent: var(--accent-blue);
+  --row-radius: 12px;
+  --box-radius: 18px;
+  background: var(--background);
+  color: var(--ink-80);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+}
+.artifact-viewer { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.artifact-viewer-bar { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; padding: 14px 28px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.artifact-viewer-bar span:last-child { color: var(--ink-70); }
+.artifact-viewer-body { min-height: 0; flex: 1; overflow: auto; }
+.holycow-artifact { min-height: 100%; container-type: inline-size; }
+.artifact-document { max-width: 1200px; margin-inline: auto; padding: 44px 48px 88px; }
+.holycow-artifact :is(h1,h2,h3,h4,h5,h6) { color: var(--ink); font-weight: 650; letter-spacing: -.04em; line-height: 1.2; }
+.artifact-heading { margin-bottom: 32px; }
+.artifact-eyebrow { font: 11px/1.5 ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-70); }
+.artifact-eyebrow::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 10px; border-radius: 50%; background: var(--chart-2); vertical-align: middle; }
+.holycow-artifact h1 { max-width: 1000px; font-size: clamp(32px, 4.5cqw, 56px); margin: 24px 0 0; letter-spacing: -.055em; line-height: 1.12; overflow-wrap: anywhere; }
+.holycow-artifact h1 span { background: linear-gradient(100deg,#fdd4a3,#fb6fec,#84a9fa) 0 94% / 100% .12em no-repeat; }
+.holycow-artifact h2 { font-size: 32px; }
+.holycow-artifact h3 { font-size: 25px; }
+.holycow-artifact h4 { font-size: 20px; }
+.artifact-contents { display: flex; gap: 8px; flex-wrap: wrap; margin: 28px 0 36px; }
+.artifact-contents a { display: flex; gap: 8px; align-items: center; padding: 9px 14px; border: 1px solid var(--border); border-radius: 100px; background: var(--card); color: var(--ink-80); font-size: 12px; line-height: 1.5; text-decoration: none; }
+.artifact-contents a:hover { background: var(--sel); }
+.artifact-contents a span { font: 10px ui-monospace, monospace; color: var(--ink-70); }
+.artifact-blocks { display: flex; flex-direction: column; gap: 24px; }
+.holycow-artifact section { scroll-margin-top: 24px; overflow-wrap: anywhere; }
+.holycow-artifact [data-kind="heading"] { margin-top: 20px; padding-top: 28px; border-top: 1px solid var(--border); }
+.holycow-artifact [data-kind="text"], .holycow-artifact [data-kind="list"] { max-width: 80ch; }
+.holycow-artifact .artifact-blocks > [data-kind="text"]:first-child { max-width: 76ch; font-size: 19px; line-height: 1.7; }
+.holycow-artifact .prose-reply { font-size: inherit; line-height: inherit; color: inherit; }
+.holycow-artifact .prose-reply p { margin-bottom: 14px; }
+.holycow-artifact .prose-reply > :last-child { margin-bottom: 0; }
+.holycow-artifact :is(ul,ol) { gap: 14px; }
+.holycow-artifact li { padding-left: 4px; }
+.holycow-artifact a { color: var(--accent-blue); text-underline-offset: 3px; overflow-wrap: anywhere; }
+.holycow-artifact .artifact-contents a { color: var(--ink-80); }
+.holycow-artifact :is(a,button,summary,input,select,textarea,[tabindex]):focus-visible { outline: 3px solid var(--accent-blue); outline-offset: 3px; }
+.holycow-artifact strong { color: var(--ink); font-weight: 650; }
+.holycow-artifact :is(pre,code) { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.holycow-artifact code { overflow-wrap: anywhere; }
+.holycow-artifact pre { padding: 22px; border: 1px solid var(--border); border-radius: 16px; background: var(--background-secondary); font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: none; }
+.holycow-artifact pre code { white-space: pre-wrap; }
+.artifact-table { overflow-x: auto; border: 1px solid var(--border); border-radius: 18px; background: var(--card); }
+.holycow-artifact table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 14px; line-height: 1.8; }
+.holycow-artifact th { padding: 15px 20px; background: var(--background-secondary); color: var(--ink-70); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; font-weight: 650; border-bottom: 1px solid var(--border); }
+.holycow-artifact td { padding: 20px; vertical-align: top; border-bottom: 1px solid var(--border); }
+.holycow-artifact tr:last-child td { border-bottom: 0; }
+.holycow-artifact tbody tr:hover { background: #f9f9fa; }
+.holycow-artifact table:has(th:nth-child(2)):not(:has(th:nth-child(4))) th:first-child { width: 26%; }
+.holycow-artifact td + td { border-left: 1px solid var(--border); }
+.holycow-artifact [data-kind="stats"] dl > div { padding: 24px; background: linear-gradient(120deg,#e3f0e6,var(--card) 90%); border: 1px solid var(--border); border-radius: 18px; box-shadow: none; }
+.holycow-artifact [data-kind="stats"] dd { margin-top: 8px; }
+.holycow-artifact [data-kind="stats"] dd:first-of-type { color: var(--ink); font-size: 32px; line-height: 1.2; letter-spacing: -.04em; }
+.holycow-artifact [data-kind="callout"] > div { padding: 22px 24px; border: 1px solid var(--border); border-radius: 18px; line-height: 1.75; box-shadow: none; }
+.holycow-artifact [data-kind="callout"] .font-medium { color: var(--ink); margin-bottom: 8px; font-size: 17px; }
+.holycow-artifact details { padding: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: none; }
+.holycow-artifact summary { color: var(--accent-blue); }
+.holycow-artifact :is(button,input,select,textarea) { font: inherit; }
+.holycow-artifact button { border-radius: 100px; min-height: 42px; }
+.holycow-artifact [data-kind="choice"] button { border-radius: 16px; padding: 18px; background: var(--card); border: 1px solid var(--border); }
+@container (max-width: 700px) {
+  .artifact-document { padding: 28px 22px 56px; }
+  .holycow-artifact h2 { font-size: 27px; }
+  .holycow-artifact h3 { font-size: 23px; }
+  .artifact-contents { gap: 6px; }
+  .artifact-contents a { font-size: 11px; }
+  .holycow-artifact table, .holycow-artifact tbody, .holycow-artifact tr, .holycow-artifact td { display: block; width: 100%; }
+  .holycow-artifact thead { display: none; }
+  .artifact-table { border: 0; border-radius: 0; background: transparent; }
+  .holycow-artifact tr { border: 1px solid var(--border); border-radius: 16px; background: var(--card); margin-bottom: 14px; padding: 6px; }
+  .holycow-artifact td { padding: 14px; border: 0; }
+  .holycow-artifact td + td { padding-top: 0; border: 0; }
+  .holycow-artifact td::before { content: attr(data-label); display: block; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-70); margin-bottom: 6px; }
+}
