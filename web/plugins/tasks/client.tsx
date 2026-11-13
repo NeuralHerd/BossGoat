@@ -5,6 +5,7 @@
 // folds. ⋯ narrows it all to the space picked. A Ready row has Review. A row's menu only pins it (core/menus.js taskMenu,
 // the window's too); the Assistant does the rest. Done tasks archive themselves: the Archived row at the bottom opens them.
 import clsx from 'clsx'
+import { Dependencies } from './Dependencies.tsx'
 import { openAccept, useAccepting } from '@client/screens/Accept.tsx'
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
@@ -23,6 +24,7 @@ import {
   getState,
   listView,
   openTask,
+  openArtifact,
   openSplit,
   panesHere,
   splitClick,
@@ -398,6 +400,13 @@ function TaskList(_: { placeId: string }) {
   const snap = useSnap()!
   const view = useStore((s) => listView(s.ui, snap))
   const key = view.key
+  const [dependencies, setDependencies] = useState(() => {
+    try { return localStorage.getItem('bossgoat.tasks.view') === 'dependencies' } catch { return false }
+  })
+  const pickView = (on: boolean) => {
+    setDependencies(on)
+    try { localStorage.setItem('bossgoat.tasks.view', on ? 'dependencies' : 'list') } catch {}
+  }
   const by = useUI((u) => u.groups)
   const allDone = useUI((u) => u.allDone)
   const shut = useUI((u) => u.shut)
@@ -449,7 +458,15 @@ function TaskList(_: { placeId: string }) {
   let lastOn: string | undefined
   return (
     <>
-      <TaskFilter listKey={view.search} order={order} />
+      <TaskFilter listKey={view.search} order={dependencies ? [] : order} />
+      <div className="flex gap-1 px-3 pt-2" role="group" aria-label="Task view">
+        {[false, true].map(on => <button key={String(on)} type="button" aria-pressed={dependencies === on}
+          onClick={() => pickView(on)} className="rounded-full px-3 py-1 text-xs text-fg2 hover:text-fg aria-pressed:bg-sel aria-pressed:text-fg">
+          {on ? 'Dependencies' : 'List'}
+        </button>)}
+      </div>
+      {dependencies ? <Dependencies tasks={[...snap.tasks, ...(snap.dependencyTasks ?? [])]}
+        selected={q ? [...live, ...archivedIn(snap, view).filter(t => found(snap, t, q))] : live.filter(t => t.state !== 'done')} open={t => openTask(t.id)} results={openArtifact} /> : <>
       <ByToggle />
       <div ref={list} className="relative">
         {!loaded ? <Empty className="pt-3 text-fg3">Reading tasks…</Empty> : null}
@@ -507,6 +524,7 @@ function TaskList(_: { placeId: string }) {
         {q && !groups.length && !autos.length ? <Empty className="pt-3 text-fg3">No tasks match “{q}”.</Empty> : null}
         {footer}
       </div>
+      </>}
     </>
   )
 }

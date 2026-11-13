@@ -19,7 +19,7 @@ for (const k of Object.keys(page)) if (!had.includes(k)) g[k] = page[k]
 afterAll(() => {
   for (const k of Object.keys(page)) if (!had.includes(k)) delete g[k]
 })
-const { placeOf } = await import('./kernel.ts')
+const { placeOf, taskOf, tasksIn } = await import('./kernel.ts')
 
 const snap = (places: unknown[]) =>
   ({ name: 'vm', host: 'vm', user: 'you', places, machines: [{ id: 'm:vm', machine: 'vm', name: 'vm-demo', status: 'idle', here: true }], tasks: [], automations: {}, artifacts: [], asks: {}, needs: [], settings: [] }) as unknown as Snapshot
@@ -36,4 +36,13 @@ test('with no space left, the shown space is an empty stand-in, never undefined'
 test('with a space, the shown space is a real one', () => {
   const shop = { id: 'p:vm:shop', name: 'shop', machine: 'vm', level: 2, status: 'idle', mode: 'regular', chat: 'c:vm:shop' }
   expect(placeOf(snap([shop]), 'p:vm:gone').id).toBe('p:vm:shop')
+})
+
+test('an old prerequisite opens from Dependencies without reappearing in normal task lists', () => {
+  const s = snap([])
+  const old = { id: 'APP-1', name: 'Foundation', state: 'done', status: 'done', place: '', on: 'vm', age: '', created: '' } as const
+  s.dependencyTasks = [old]
+  expect(taskOf(s, old.id)).toBe(old)
+  expect(tasksIn(s, { chips: [] })).toEqual([])
+  expect(taskOf(s, 'missing')).toBeNull()
 })

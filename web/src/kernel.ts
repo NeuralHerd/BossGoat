@@ -1051,7 +1051,7 @@ export function noSpace(snap: Snapshot): Place {
 }
 
 export function taskOf(snap: Snapshot, id: string | null) {
-  return id ? (snap.tasks.find((t) => t.id === id) ?? null) : null
+  return id ? (snap.tasks.find((t) => t.id === id) ?? snap.dependencyTasks?.find((t) => t.id === id) ?? null) : null
 }
 
 /** the spaces a space's lists show, itself included: its own; a home space's its machine's; the main machine's home

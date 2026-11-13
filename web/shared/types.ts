@@ -296,6 +296,13 @@ export interface TaskLaunchPreview {
   problems: string[]
 }
 
+export interface TaskDependency {
+  key: string | null
+  ref: string
+  state: string
+  error?: string
+}
+
 export interface Task {
   /** short name, as people say it: GTM-15 */
   id: string
@@ -350,6 +357,11 @@ export interface Task {
   report?: Report
   /** its pull request on GitHub, once one is open */
   pr?: { number: number; url: string }
+  dependencyKey?: string
+  dependencies?: TaskDependency[]
+  skill?: string
+  workerAgent?: string
+  needs?: string
   /** queued: the tasks it still waits for ("SHE-12", "vm-str:SHE-12" on another machine) */
   after?: string[]
   /** how it ended, for a task queued after it: done (merged, or closed with nothing to merge), stopped, failed */
@@ -1206,6 +1218,8 @@ export interface Snapshot {
   /** the machines, as headings over their spaces, in the sidebar's order */
   machines: Machine[]
   tasks: Task[]
+  /** older completed prerequisites, kept out of normal task lists and counts */
+  dependencyTasks?: Task[]
   automations: Record<string, Automation[]>
   /** every artifact, of every machine */
   artifacts: Artifact[]

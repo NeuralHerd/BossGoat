@@ -368,12 +368,18 @@ export class Compat {
     // one older than 10 minutes was left by a quit (as the window reads it)
     const acc = this.shared?.value("tasks.accepting") ?? {};
     const accepting = (r: Row) => { const at = acc?.[`${r.machine ?? ""}:${r.folder}:${r.ref}`]; return typeof at === "number" && Date.now() - at < 600000; };
-    const tasks: Task[] = rows.filter((r) => r.section !== "done" || (r.done_at && Date.now() - r.done_at < 7 * 86400000)).map((r) => {
+    const prerequisites = new Set(rows.flatMap((r) => (r.dependencies ?? []).map((d: any) => d.key).filter(Boolean)));
+    const visible = new Set(rows.filter((r) => r.section !== "done" || (r.done_at && Date.now() - r.done_at < 7 * 86400000)).map(taskId));
+    const allTasks: Task[] = rows.filter((r) => prerequisites.has(r.key) || visible.has(taskId(r))).map((r) => {
       const id = taskId(r);
       if (r.worker) chats.set(`${id}/worker`, r.worker);
       else if (r.lastLog) chats.set(`${id}/worker`, `log:${r.machine ?? ""}|${r.lastLog.kind}|${r.lastLog.path}`);
       const t: Task = {
         id, name: r.title, status: SECTION[r.section] ?? "todo", place: placeOf(r), listName: placeName(r), age: r.started ? ago(r.started, false) : "",
+        ...(r.key ? { dependencyKey: r.key } : {}),
+        ...(r.dependencies?.length ? { dependencies: r.dependencies } : {}),
+        ...(r.skill ? { skill: r.skill } : {}), ...(r.workerAgent ? { workerAgent: r.workerAgent } : {}),
+        ...(r.needs ? { needs: r.needs } : {}),
         state: r.section, on: r.machine ?? host, created: "", ...(r.folder ? { taskFolder: r.folder } : {}),
         // its latest news (ms), as Jump orders tasks newest first
         at: Math.max(0, ...[r.done_at, r.ready_at, r.started].filter((x: unknown): x is number => typeof x === "number")),
@@ -408,6 +414,8 @@ export class Compat {
       };
       return t;
     });
+    const tasks = allTasks.filter((t) => visible.has(t.id));
+    const dependencyTasks = allTasks.filter((t) => !visible.has(t.id));
 
     const needs: Need[] = [
       ...rows.filter((r) => r.section === "needs" && !r.archived).map((r) => ({ id: "attention", chat: `${taskId(r)}/worker`, place: placeOf(r), task: taskId(r), at: r.started ?? Date.now(), text: r.sub ?? "" })),
@@ -467,7 +475,7 @@ export class Compat {
 
     this.chats = chats;
     this.last = {
-      terminalTransport: "core", name: "BossGoat", host, user: input.user, places, machines, tasks, automations: automationsBySpace(input.automations ?? [], spaces, (s) => places.find((p) => p.id === s.id)?.name ?? s.name), asks: {}, needs, settings: [...(input.settings ?? []), ...notify],
+      terminalTransport: "core", name: "BossGoat", host, user: input.user, places, machines, tasks, ...(dependencyTasks.length ? { dependencyTasks } : {}), automations: automationsBySpace(input.automations ?? [], spaces, (s) => places.find((p) => p.id === s.id)?.name ?? s.name), asks: {}, needs, settings: [...(input.settings ?? []), ...notify],
       artifacts: (input.artifacts ?? []).map((a) => artifactOf(a, spaces, (addr) => { const k = kindOfTerm((this as any).terminalsOf?.(addr)); return k ? CLI_NAMES[k] ?? k : null; })),
       sections, last, read, off: input.offPlugins ?? [],
       // the Window page's look switches (shared keys the window reads too): the web follows the same ones

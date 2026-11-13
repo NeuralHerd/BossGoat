@@ -5,3 +5,4 @@ cd "$(dirname "$0")/.."
 python3 bin/sync-shared --check
 (cd test && python3 -m unittest test_cursor test_holycow test_task_permissions test_task_preview test_task_preview_ui test_bossgoat_updates test_bossgoat_updates_ui)
 bun test core/cursor.test.js core/chat-log.test.js core/settings.test.js core/permission-menu.test.js core/assistant-health.test.js service/cursor-actions.test.ts service/settings.test.ts service/settings-guard.test.ts service/machines-recovery.test.ts
+bun test core/task-dependencies.test.js service/task-dependencies.test.ts service/tasks-open-chat.test.ts web/plugins/tasks/Dependencies.test.tsx web/src/no-spaces.test.ts

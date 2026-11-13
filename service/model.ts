@@ -9,6 +9,7 @@ import type { Live } from "./live.ts";
 import { HOME, settingsFile, where } from "./paths.ts";
 import { READ_LISTS, taskLists, fileIn } from "../core/tasklists.js";
 import * as T from "../core/tasks.js";
+import { dependencyReader } from "../core/task-dependencies.js";
 import { isHelper, subagentsOf } from "../core/chat-view.js";
 // The core is plain JavaScript; its defaults read as narrow types to TypeScript.
 const { place, refOf, taskKey, autoPrefix, reportOf, secondLine, leftOf, queueReason, machineOf } = T as any;
@@ -237,6 +238,7 @@ export class Model {
     const pins = new Set<string>(Array.isArray(pinList) ? pinList : []);
     const lists = [null, ...this.machines].flatMap((m) => this.lists.get(m) ?? []);
 
+    const dependencies = dependencyReader(lists);
     let settles = Infinity;
     const rows = lists.flatMap((list) => list.tasks.map((task: any) => {
       const live = this.agentsOf(list, task);
@@ -257,6 +259,7 @@ export class Model {
         machine: list.machine, folder: list.folder, slug: list.slug, id: task.id, list: list.name,
         // the space whose Assistant started it (herdr-task keeps it): the window counts and lists it there
         space: task.space ? (list.machine ? `${list.machine}/${task.space}` : task.space) : null,
+        dependencies: dependencies(list, task), skill: task.skill ?? null, workerAgent: last?.agent ?? null,
         worker, archived: !!task.archived, pinned: pins.has(taskKey(list, task)),
         scheduled_for: task.state === "scheduled" ? task.scheduled_for ?? null : null,
         started: task.started ?? null, ready_at: task.ready_at ?? null, done_at: task.done_at ?? null,

@@ -31,6 +31,8 @@ import { machinesInOrder, machineOrderOf, chatPane } from "./core/spaces.js";
 import { RANK, STATUS, RANK_OF, ORDER, GROUP_BY, groupBy, groupNow, machineOf, machineName, refOf, taskKey, autoPrefix, place,
   queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short, autoWhere, fromLine, inSpace, holdingItems } from "./core/tasks.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
+import { dependencyReader } from "./core/task-dependencies.js";
+import { dependencyView } from "./dependencies.js";
 import { SH } from "./core/paths.js";
 import { dirs } from "./dirs.js";
 import { TEXT, H, RADIUS, red, amber } from "./ui.js";
@@ -283,6 +285,7 @@ export default class Tasks extends View {
     const here = this.here && filters && !(this.jumpQ && this.query.value() === this.jumpQ) ? spaces().find((s) => s.active) ?? null : null;
     let placed = this.lists.flatMap((l) => l.tasks.map((task) => this.place(l, task)));
     // Each task's status as its list says it now, archived ones too: a Needs-you item the list has moved past is stale.
+    const allPlaced = placed;
     const truth = new Map(placed.map((p) => [`${p.list.machine ?? ""}:${p.list.folder}:${refOf(p.list, p.task)}`, p]));
     if (here) placed = placed.filter((p) => inSpace(here, { machine: p.list.machine ?? null, folder: p.list.folder, space: p.task.space }));
     // Archived tasks (herdr-task: Done ones archive themselves after a while) leave every list and
@@ -302,6 +305,7 @@ export default class Tasks extends View {
       inbox = inbox.filter((x) => this.needFound(x, q));
     }
     const found = q ? archived.filter((p) => this.found(p, q)) : archived;
+    const graphPlaced = q ? [...placed, ...found] : placed;
     // Pinned (the person's pins, shared "tasks.pinned"): at the top of the grouped list, and in no
     // other group there, Needs you included (its item for a pinned task shows as that task's row).
     const pinSet = this.pins();
@@ -416,10 +420,19 @@ export default class Tasks extends View {
       if (q && !body.length && this.ready) body.push(note(`No tasks match “${q}”.`));
     }
 
+    const dependencies = this.dependencyMode ??= localStorage.getItem("bossgoat.tasks.view") === "dependencies";
+    const graphSelected = graphPlaced.filter((p) => filter === "all" ? Boolean(q) || p.section !== "done" : (filter === "needs" ? p.section === "needs" || inNeeds(p) : p.section === filter));
+
     return v_flex().id("tasks").size_full().min_h(0).on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } }).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().pl(14).pr(8).gap(6).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child("Tasks"))
         .child(div().flex_1())
+        .children(["List", "Dependencies"].map((label, i) => div().id("tasks-view-" + i).px(8).py(5).rounded(6)
+          .text_size(12).cursor_pointer().bg(dependencies === Boolean(i) ? t.selected : t.background)
+          .hover((s) => s.bg(t.hover)).on_click((_e, cx) => {
+            this.dependencyMode = Boolean(i); this.archivedOpen = false;
+            localStorage.setItem("bossgoat.tasks.view", i ? "dependencies" : "list"); cx.notify();
+          }).child(label)))
         .child(h_flex().id("task-more").size(H.sm).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer().text_color(t.muted)
           .hover((s) => s.bg(t.hover).text_color(t.foreground))
           // Its menu (mods/tasks-menu): a 28 heading, then 32 rows (ui.js menuRow).
@@ -439,7 +452,25 @@ export default class Tasks extends View {
           .child(div().size(8).mt(5).flex_none().rounded(4).bg(red()))
           .child(div().flex_1().text_size(TEXT.label).text_color(t.muted).child(this.error))))
         .when(!this.ready && !this.error, (el) => el.child(div().px(18).py(28).text_center().text_size(TEXT.label).text_color(t.dim).child("Reading tasks…")))
-        .children(body));
+        .children(dependencies && !this.archivedOpen ? [this.dependencies(allPlaced, graphSelected, t)] : body));
+  }
+
+  dependencies(all, selected, t) {
+    const read = dependencyReader(this.lists);
+    const placed = new Map(all.map((p) => [taskKey(p.list, p.task), p]));
+    const nodes = all.map((p) => ({
+      key: taskKey(p.list, p.task), ref: refOf(p.list, p.task), name: p.task.title,
+      where: [placeName(p.list), machineName(p.list.machine)].join(" · "),
+      state: p.section, needs: p.needs, sub: this.statusLine(p),
+      dependencies: read(p.list, p.task), skill: p.task.skill,
+      agent: p.task.agents?.[p.task.agents.length - 1]?.agent,
+      progress: reportOf(p.task, p.section, p.live)?.done, proof: p.task.proof?.id,
+    }));
+    const open = (n) => this.target(placed.get(n.key))?.();
+    return dependencyView(nodes, selected.map((p) => taskKey(p.list, p.task)), t, open, (n) => {
+      open(n);
+      if (hasNode(layout(), "tasks-thread-artifacts")) run("layout.select", { stack: "tasks-thread-body", child: "tasks-thread-artifacts" });
+    });
   }
 
   // The filter row: All statuses (not the header's All, which is folders), a chip for each status that wants a look (Needs you, Working, Ready) as

@@ -340,6 +340,7 @@
       "core": [
         "tasks",
         "tasklists",
+        "task-dependencies",
         "needs"
       ],
       "herdr": {
@@ -349,7 +350,8 @@
       },
       "web": {
         "files": [
-          "plugins/tasks/client.tsx"
+          "plugins/tasks/client.tsx",
+          "plugins/tasks/Dependencies.tsx"
         ]
       },
       "forms": {
