@@ -117,10 +117,9 @@ export async function prune() {
   };
   try {
     for (const name of await fs.readdir(drafts)) if (name.endsWith(".json")) paths(JSON.parse(await fs.readFile(`${drafts}/${name}`, "utf8")));
-    for (const name of await fs.readdir(dir)) {
-      const path = `${dir}/${name}`;
-      if (name.startsWith("pasted-") && !keep.has(path) && Date.now() - (await fs.stat(path)).mtimeMs > 86400000) await fs.unlink(path);
-    }
+    const old = await exec("find", [dir, "-type", "f", "-name", "pasted-*", "-mmin", "+1440", "-print0"]);
+    if (old.code !== 0) return;
+    for (const path of String(old.stdout ?? "").split("\0").filter(Boolean)) if (!keep.has(path)) await fs.unlink(path);
   } catch {} // If a draft cannot be read, keep its attachments.
 }
 

@@ -8,7 +8,12 @@ import { restorePending, receipt } from "./delivery.js";
 const source = readFileSync(new URL("../mods/chat/main.js", import.meta.url), "utf8");
 const method = (name) => source.match(new RegExp(String.raw`\n  (?:async )?${name}\([^\n]*\) \{\n[\s\S]*?\n  \}`))[0];
 const methods = ["loadDraft", "saveDraft", "settlePending", "retry"].map(method).join(",");
-const make = (dir) => new Function("fs", "appHome", "restorePending", "receipt", "norm", `return ({${methods}})`)(fs, () => dir, restorePending, receipt, (s) => s.trim());
+const exec = async (cmd, args) => {
+  const p = Bun.spawn([cmd, ...args], { stdout: "pipe", stderr: "pipe" });
+  return { code: await p.exited, stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text() };
+};
+const desktopFs = { exists: (path) => fs.access(path).then(() => true, () => false), readFile: fs.readFile, writeFile: fs.writeFile, mkdir: fs.mkdir, unlink: fs.unlink, readdir: fs.readdir };
+const make = (dir) => new Function("fs", "appHome", "restorePending", "receipt", "norm", "exec", `return ({${methods}})`)(desktopFs, () => dir, restorePending, receipt, (s) => s.trim(), exec);
 const state = (dir) => ({ box: { value: () => "", set_value() {} }, files: [], quote: null, queue: [], pending: [], markTyping() {}, draftFile: join(dir, "data/chat-drafts/assistant.json") });
 
 test("desktop reopen keeps full messages and files; checking does not resend an ambiguous send", async () => {
@@ -17,6 +22,7 @@ test("desktop reopen keeps full messages and files; checking does not resend an 
     const original = Object.assign(state(dir), make(dir));
     original.pending = [{ id: "p1", text: "Read this", at: 10000, attempted: true, msg: { id: "m1", text: "Read this", files: [{ path: "/saved/image.png" }] } }];
     await original.saveDraft(true);
+    expect((await fs.stat(original.draftFile)).mode & 0o777).toBe(0o600);
     const reopened = Object.assign(state(dir), make(dir));
     await reopened.loadDraft({ notify() {} });
     expect(reopened.pending[0]).toMatchObject({ late: true, msg: original.pending[0].msg });
@@ -47,7 +53,7 @@ test("attachment cleanup preserves files referenced by every saved chat, includi
     await fs.writeFile(join(drafts, "other.json"), JSON.stringify({ pending: [{ msg: { files: [{ path: join(attach, "pasted-kept.png") }] } }] }));
     const src = readFileSync(new URL("../mods/chat/attach.js", import.meta.url), "utf8");
     const code = src.match(/export async function prune\(\) \{[\s\S]*?\n\}/)[0].replace("export ", "");
-    const prune = new Function("fs", "appHome", `${code}; return prune`)(fs, () => dir);
+    const prune = new Function("fs", "appHome", "exec", `${code}; return prune`)(desktopFs, () => dir, exec);
     await prune();
     expect(await fs.readdir(attach)).toEqual(["pasted-kept.png"]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -63,5 +69,16 @@ test("a corrupt draft is preserved and blocks new dispatch rather than erasing p
     await self.loadDraft({ notify() {} });
     await expect(self.saveDraft(true)).rejects.toThrow("Couldn't read saved messages");
     expect(await fs.readFile(self.draftFile, "utf8")).toBe("damaged");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test("a first conversation with no saved draft can save immediately", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "desktop-first-draft-"));
+  try {
+    const self = Object.assign(state(dir), make(dir));
+    await self.loadDraft({ notify() {} });
+    await self.saveDraft(true);
+    expect(JSON.parse(await fs.readFile(self.draftFile, "utf8")).pending).toEqual([]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -627,6 +627,7 @@ export default class Chat extends View {
   // ---- drafts -----------------------------------------------------------------------------
 
   async loadDraft(cx) {
+    if (!(await fs.exists(this.draftFile))) return;
     let d = null;
     try {
       const text = await fs.readFile(this.draftFile, "utf8");
@@ -664,8 +665,15 @@ export default class Chat extends View {
     const text = JSON.stringify(d), file = this.draftFile;
     const write = async () => {
       await fs.mkdir(`${appHome()}/data/chat-drafts`, { recursive: true });
-      await fs.writeFile(`${file}.tmp`, text, { mode: 0o600 });
-      await fs.rename(`${file}.tmp`, file);
+      const tmp = `${file}.${Date.now()}-${Math.random().toString(36).slice(2, 8)}.tmp`;
+      try {
+        // Herdr's fs/promises has no rename or file modes: create privately, then move atomically.
+        const made = await exec("sh", ["-c", 'umask 077; : > "$1" && chmod 600 "$1"', "draft", tmp]);
+        if (made.code !== 0) throw new Error(made.stderr || "Couldn't prepare saved messages");
+        await fs.writeFile(tmp, text);
+        const moved = await exec("mv", ["-f", tmp, file]);
+        if (moved.code !== 0) throw new Error(moved.stderr || "Couldn't save messages");
+      } finally { await fs.unlink(tmp).catch(() => {}); }
     };
     const saved = (this.savingDraft ?? Promise.resolve()).catch(() => {}).then(write);
     this.savingDraft = saved;
