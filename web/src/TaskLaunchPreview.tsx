@@ -22,16 +22,16 @@ export function TaskLaunchPreview({ task, note }: { task: string; note: string }
     } catch (e) { setError(String(e instanceof Error ? e.message : e)); setPreview(null) }
     finally { setBusy(false) }
   }
-  return <div className="overflow-y-auto p-4" style={{ colorScheme: 'light', background: '#f9f9fa', color: '#1d1d1f' }}>
+  return <div className="overflow-y-auto bg-bg p-4 text-fg">
     <p className="mb-3 text-sm">{message || note}</p>
-    <section className="rounded-lg border p-4" style={{ background: '#ffffff', borderColor: '#1d1d1f21' }} aria-label="Task launch preview">
+    <section className="rounded-lg border border-line bg-bubble p-4" aria-label="Task launch preview">
       <h3 className="mb-3 font-semibold">Task launch preview</h3>
       {preview?.rows.map(row => <p className="mb-2 text-sm" key={row.label}><strong>{row.label}:</strong> {row.text}</p>)}
       {!preview && !error ? <p>Checking launch settings…</p> : null}
-      {[...(preview?.problems || []), ...(error ? [error] : [])].map(text => <p role="alert" className="my-2 text-sm" style={{ color: '#b42318' }} key={text}>{text}</p>)}
+      {[...(preview?.problems || []), ...(error ? [error] : [])].map(text => <p role="alert" className="my-2 text-sm text-need-fg" key={text}>{text}</p>)}
       <div className="mt-3 flex gap-3">
-        <button type="button" disabled={busy} onClick={() => void check()} className="rounded border px-3 py-2 disabled:opacity-50">Check again</button>
-        <button type="button" disabled={busy || !preview?.ready || Boolean(message)} onClick={() => void start()} className="rounded px-3 py-2 disabled:opacity-50" style={{ background: '#111413', color: '#ffffff' }}>Start task</button>
+        <button type="button" disabled={busy} onClick={() => void check()} className="rounded border border-line bg-bg px-3 py-2 text-fg disabled:opacity-50">Check again</button>
+        <button type="button" disabled={busy || !preview?.ready || Boolean(message)} onClick={() => void start()} className="rounded bg-fg px-3 py-2 text-bg disabled:opacity-50">Start task</button>
       </div>
     </section>
   </div>

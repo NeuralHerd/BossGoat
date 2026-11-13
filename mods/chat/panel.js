@@ -26,7 +26,7 @@ import { shared, setShared, run, theme, exec, appHome, home, readTextFile, write
 import { terminals, agents } from "./live.js";
 import { taskDot, ownProgress, estimated } from "./dot.js";
 import { busyAgain, onIt, readyWait } from "./core/tasks.js";
-import { button, segmented, TEXT, RADIUS, toast, plainError } from "./ui.js";
+import { button, segmented, TEXT, RADIUS, toast, plainError, red } from "./ui.js";
 import { on as addonOn } from "./addons.js";
 import { artifactCli } from "./artview.js";
 import { GREP, publishedIds, taskArtifacts } from "./core/task-artifacts.js";
@@ -194,12 +194,13 @@ export class PanelHost {
   }
 
   previewCard(cx) {
+    const t = theme();
     const current = shared("tasks.thread.preview");
     const p = current?.key === wantId(this.cur) ? current.result : null;
-    return v_flex().w_full().gap(10).p(16).rounded(8).bg("#ffffff").text_color("#1d1d1f").border_1().border_color("#1d1d1f21")
+    return v_flex().w_full().gap(10).p(16).rounded(8).bg(t.popover).text_color(t.foreground).border_1().border_color(t.border)
       .child(div().font_semibold().child("Task launch preview"))
       .children((p?.rows ?? []).map(r => div().text_size(13).child(`${r.label}: ${r.text}`)))
-      .children((p?.problems ?? []).map(message => div().text_size(13).text_color("#b42318").child(message)))
+      .children((p?.problems ?? []).map(message => div().text_size(13).text_color(red()).child(message)))
       .when(!p, el => el.child(div().child("Checking launch settings…")))
       .child(h_flex().gap(8)
         .child(button("task-preview-refresh", "Check again", { disabled: this.previewLoading, onClick: (_, cx) => cx.spawn(cx => this.loadPreview(cx)) }))

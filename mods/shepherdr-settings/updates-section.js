@@ -31,7 +31,6 @@ export function runUpdate(view, action, cx) {
 }
 
 export function updatesSection(view, t, cx) {
-  t = { ...t, popover: "#ffffff", background: "#f9f9fa", foreground: "#1d1d1f", muted: "#1d1d1fcc", border: "#1d1d1f21" };
   const state = view.updates;
   const result = state.result;
   const busy = state.busy || result?.state === "installing";

@@ -12,6 +12,8 @@ import assert from 'node:assert/strict';
 const state = new Map(), requests = [], controls = [], texts = [];
 const shared = k => state.get(k), setShared = (k, v) => state.set(k, v);
 const appHome = () => '/app';
+const theme = () => ({popover: 'theme-popover', foreground: 'theme-foreground', border: 'theme-border'});
+const red = () => 'theme-error';
 const dirs = () => ({tasks: '/tasks'}), layout = () => null;
 let taskFile;
 const readTextFile = async () => JSON.stringify(taskFile);
