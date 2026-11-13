@@ -68,12 +68,29 @@ def source(root):
     return rec, src, branch, remote, ref, head
 
 
-def matches(rec, src):
+def matches(rec, src, preserved=None):
     try:
         items = I.web_items(src) if rec.get("web") else I.source_items(src)[2]
-        return all(rec.get("files", {}).get(rel) == I.fsha(rel, I.read(file)) for _, rel, file in items)
+        current = True
+        for _, rel, file in items:
+            wanted = I.fsha(rel, I.read(file))
+            if rec.get("files", {}).get(rel) == wanted:
+                continue
+            dest = os.path.join(rec["root"], rel) if rec.get("root") else None
+            if dest and I.read(dest) is not None and I.fsha(rel, I.read(dest + ".new")) == wanted:
+                if preserved is not None:
+                    preserved.append(rel)
+            else:
+                current = False
+        return current
     except (I.Stop, OSError, ValueError, KeyError, TypeError):
         raise UpdateError("Could not compare the checkout with the installed files. Check that the checkout is complete.")
+
+
+def current_message(local):
+    kept = len(local.get("preserved_files", []))
+    return (f"Up to date with {kept} preserved customizations." if kept else "Installed files match the repository.") + \
+        " Reopen BossGoat after an update to load its panels."
 
 
 def local_status(root):
@@ -93,7 +110,8 @@ def local_status(root):
         pass
     try:
         out["repository_dirty"] = bool(git(src, "status", "--porcelain")[0])
-        out["needs_install"] = not matches(rec, src)
+        out["preserved_files"] = []
+        out["needs_install"] = not matches(rec, src, out["preserved_files"])
     except (UpdateError, I.Stop, OSError, ValueError, KeyError, TypeError):
         out["source_problem"] = "Could not compare the checkout with the installed files."
     return out
@@ -116,10 +134,11 @@ def check(root):
     if diverged:
         raise UpdateError("The checkout is ahead of or differs from its update branch. Reconcile it before updating; nothing was reset.")
     available = target != head or not matches(rec, src)
-    return {**local_status(root), "state": "available" if available else "current", "available": available,
+    local = local_status(root)
+    return {**local, "state": "available" if available else "current", "available": available,
             "checked_at": int(time.time() * 1000), "branch": branch, "source": src, "head": head, "revision": target,
             "message": "Repository changes are downloaded but not installed. Update BossGoat to apply them." if target == head and available else
-            "An update is available to download and install." if available else "Installed files match the repository. Reopen BossGoat after an update to load its panels."}
+            "An update is available to download and install." if available else current_message(local)}
 
 
 @contextlib.contextmanager
@@ -161,7 +180,7 @@ def status(root):
                     pass
             if not pending:
                 state.update(state="current", available=False,
-                             message="Installed files match the repository. Reopen BossGoat after an update to load its panels.")
+                             message=current_message(local))
         if local.get("repository_dirty"):
             state["available"] = False
     return state

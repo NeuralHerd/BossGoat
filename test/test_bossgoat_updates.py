@@ -116,6 +116,29 @@ class Updates(unittest.TestCase):
         self.assertFalse(got["available"])
         self.assertIn("Could not compare", got["message"])
 
+    def test_preserved_customizations_do_not_offer_the_same_update_forever(self):
+        self.patch.stop()
+        rel = ".config/herdr-core/templates/assistant.md"
+        dest = self.root / rel
+        dest.parent.mkdir(parents=True)
+        dest.write_text("my custom instructions")
+        Path(str(dest) + ".new").write_text("old")
+        rec = U.record(str(self.root))
+        rec.update(root=str(self.root), files={rel: U.I.fsha(rel, b"previous release")})
+        U.I.save_record(str(self.root), rec)
+        with mock.patch.object(U.I, "source_items", return_value=({}, [], [("template", rel, str(self.src / "content"))])):
+            got = U.status(str(self.root))
+            self.assertFalse(got["needs_install"])
+            self.assertFalse(got["available"])
+            self.assertEqual(got["preserved_files"], [rel])
+            self.assertIn("1 preserved customization", got["message"])
+            dest.unlink()
+            self.assertTrue(U.status(str(self.root))["needs_install"])
+            dest.write_text("my custom instructions")
+            (self.src / "content").write_text("new upstream instructions")
+            self.assertTrue(U.status(str(self.root))["needs_install"])
+            self.assertEqual(dest.read_text(), "my custom instructions")
+
     def test_old_install_record_never_invents_an_installed_revision(self):
         got = U.status(str(self.root))
         self.assertIsNone(got["installed_revision"])

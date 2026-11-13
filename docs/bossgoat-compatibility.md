@@ -12,4 +12,4 @@ Open a task that has not started in **Tasks → Chat**. The preview shows its cu
 
 ## Update status
 
-**Settings → Updates** shows installed and repository versions and revisions. A pull only changes the checkout: **Apply downloaded changes** runs the installer when its files differ. Local edits are shown and must be committed or stashed before updating. Older installation records without a revision say so until the next installation. Reopen BossGoat after installation to load updated panels.
+**Settings → Updates** shows installed and repository versions and revisions. A pull only changes the checkout: **Apply downloaded changes** runs the installer when its files differ. Local edits are shown and must be committed or stashed before updating. Files deliberately preserved by the installer are reported as customizations; an unchanged `.new` copy does not trigger the same update repeatedly. Older installation records without a revision say so until the next installation. Reopen BossGoat after installation to load updated panels.
