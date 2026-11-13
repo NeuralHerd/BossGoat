@@ -3,21 +3,22 @@
 // Finding an agent's own session log and reading it as a conversation.
 // Claude Code: ~/.claude/sessions/<pid>.json names the session its process writes, so the
 // log is ~/.claude/projects/*/<sessionId>.jsonl. Codex keeps its rollout file open, so the
-// file is whatever rollout-*.jsonl its process (or a child) holds. Both are exact: no
+// main rollout is identified by session_meta among the files its process (or a child) holds. Both are exact: no
 // guessing by folder or time, so two agents in one folder never get mixed up.
 
 // Prints the log's path on the agent's machine, or nothing. Args: kind, pid.
 import { codexQuestions } from "./asks.js";
 
-export const FIND = `
+export const FIND = String.raw`
 kind="$1"; pid="$2"
-if [ "$kind" = cursor ]; then
-  python3 - "$pid" <<'CURSOR_FIND'
-import glob, os, re, subprocess, sys, time
+if [ "$kind" = cursor ] || [ "$kind" = codex ]; then
+  python3 - "$kind" "$pid" <<'SESSION_FIND'
+import glob, json, os, re, subprocess, sys, time
 
 # Inspect the agent before its children; sockets must never trigger DNS lookups.
 deadline = time.monotonic() + 3
-queue, seen = [sys.argv[1]], set()
+kind = sys.argv[1]
+queue, seen = [sys.argv[2]], set()
 def run(args):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
@@ -41,38 +42,46 @@ while queue and time.monotonic() < deadline:
                 files.append(os.readlink(f))
             except OSError:
                 pass
-        files = "\\n".join(files)
     else:
-        files = run(["lsof", "-nP", "-p", pid, "-Fn"])
-    match = re.search(r"/\\.cursor/chats/[^/]+/([0-9a-fA-F-]+)/store\\.db", files)
-    if match:
-        sid = match[1]
-        root = os.path.expanduser("~/.cursor/projects/*/agent-transcripts/")
-        logs = glob.glob(root + sid + "/" + sid + ".jsonl") + glob.glob(root + sid + ".jsonl")
-        print(next((f for f in logs if os.path.isfile(f)), "pending"))
-        sys.exit(0)
+        files = [line[1:] for line in run(["lsof", "-nP", "-p", pid, "-Fn"]).splitlines() if line.startswith("n")]
+    if kind == "codex":
+        for path in files:
+            if not re.search(r"/rollout-[^/]+\.jsonl$", path):
+                continue
+            try:
+                with open(path, errors="replace") as f:
+                    row = json.loads(f.readline(4 * 1024 * 1024))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(row, dict) or row.get("type") != "session_meta" or not isinstance(row.get("payload"), dict):
+                continue
+            source = row["payload"].get("source")
+            # Codex holds internal approval and worker logs in the main CLI's process too.
+            if source == "subagent" or (isinstance(source, dict) and "subagent" in source):
+                continue
+            print(path)
+            sys.exit(0)
+    else:
+        match = re.search(r"/\.cursor/chats/[^/]+/([0-9a-fA-F-]+)/store\.db", "\n".join(files))
+        if match:
+            sid = match[1]
+            root = os.path.expanduser("~/.cursor/projects/*/agent-transcripts/")
+            logs = glob.glob(root + sid + "/" + sid + ".jsonl") + glob.glob(root + sid + ".jsonl")
+            print(next((f for f in logs if os.path.isfile(f)), "pending"))
+            sys.exit(0)
     queue.extend(p for p in run(["pgrep", "-P", pid]).split() if p.isdigit())
 print("pending")
-CURSOR_FIND
+SESSION_FIND
   exit $?
 fi
 kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
 for p in "$pid" $(kids "$pid"); do
-  if [ "$kind" = claude ]; then
-    j="$HOME/.claude/sessions/$p.json"
-    [ -f "$j" ] || continue
-    id=$(sed -n 's/.*"sessionId":"\\([0-9a-fA-F-]*\\)".*/\\1/p' "$j")
-    [ -n "$id" ] || continue
-    for f in "$HOME"/.claude/projects/*/"$id".jsonl; do [ -f "$f" ] && { echo "$f"; exit 0; }; done
-    echo "pending"; exit 0
-  else
-    if [ -d "/proc/$p/fd" ]; then
-      f=$(for d in /proc/$p/fd/*; do readlink "$d"; done 2>/dev/null | grep '/rollout-.*\\.jsonl$' | head -1)
-    else
-      f=$(lsof -p "$p" -Fn 2>/dev/null | sed -n 's/^n//p' | grep '/rollout-.*\\.jsonl$' | head -1)
-    fi
-    [ -n "$f" ] && { echo "$f"; exit 0; }
-  fi
+  j="$HOME/.claude/sessions/$p.json"
+  [ -f "$j" ] || continue
+  id=$(sed -n 's/.*"sessionId":"\([0-9a-fA-F-]*\)".*/\1/p' "$j")
+  [ -n "$id" ] || continue
+  for f in "$HOME"/.claude/projects/*/"$id".jsonl; do [ -f "$f" ] && { echo "$f"; exit 0; }; done
+  echo "pending"; exit 0
 done
 true`;
 

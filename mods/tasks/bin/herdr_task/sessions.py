@@ -21,6 +21,19 @@ def kids(pid):
     return out
 
 
+def main_codex_log(path):
+    """Codex opens its approval reviewer and other internal logs in the same process."""
+    try:
+        with open(path, errors="replace") as f:
+            row = json.loads(f.readline(4 * 1024 * 1024))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(row, dict) or row.get("type") != "session_meta" or not isinstance(row.get("payload"), dict):
+        return False
+    source = row["payload"].get("source")
+    return source != "subagent" and not (isinstance(source, dict) and "subagent" in source)
+
+
 def session_of(pid):
     """(session id, log path) of the agent process pid (or a child), as mods/chat/log.js finds it:
     Claude Code names its session in ~/.claude/sessions/<pid>.json; Codex holds its rollout open."""
@@ -50,7 +63,7 @@ def session_of(pid):
                 except OSError:
                     pass
         elif shutil.which("lsof"):
-            files = [l[1:] for l in run(["lsof", "-p", p, "-Fn"]).stdout.split("\n") if l.startswith("n")]
+            files = [l[1:] for l in run(["lsof", "-nP", "-p", p, "-Fn"]).stdout.split("\n") if l.startswith("n")]
         for f in files:
             cursor = re.search(r"/\.cursor/chats/[^/]+/([0-9a-fA-F-]{36})/store\.db(?:-wal|-shm)?$", f)
             if cursor:
@@ -59,7 +72,7 @@ def session_of(pid):
                 logs = glob.glob(os.path.join(base, sid, sid + ".jsonl")) + glob.glob(os.path.join(base, sid + ".jsonl"))
                 return sid, next(iter(logs), None)
             m = re.search(r"/rollout-.*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$", f)
-            if m:
+            if m and main_codex_log(f):
                 return m.group(1), f
     return None, None
 
