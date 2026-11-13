@@ -127,7 +127,7 @@ class Install(unittest.TestCase):
             self.assertEqual(os.path.realpath(command), self.p(APP, "bin/shepherdr"))
             result = subprocess.run([sys.executable, command, "version"], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.strip(), "bossgoat 3.1.30")
+            self.assertEqual(result.stdout.strip(), "bossgoat 3.1.33")
         command = self.p(".local/bin/bossgoat")
         help_result = subprocess.run([sys.executable, command, "--help"], capture_output=True, text=True)
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
@@ -163,7 +163,7 @@ class Install(unittest.TestCase):
         out = run("install", "--root", self.root, "--yes").stdout
         self.assertRegex(out, r"files: \d+ new\n")
         rec = json.load(open(self.p(APP, "data/shepherdr/installed.json")))
-        self.assertEqual(rec["version"], "3.1.30")
+        self.assertEqual(rec["version"], "3.1.33")
         self.assertTrue(os.path.isfile(self.p(APP, "mods/tasks/bin/herdr-task")))
         self.assertTrue(os.path.isfile(self.p(APP, "layouts/BossGoat.json")))
         layout = json.load(open(self.p(APP, "layouts/BossGoat.json")))

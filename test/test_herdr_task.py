@@ -1322,6 +1322,97 @@ class OwnBackgroundWork(unittest.TestCase):
         self.assertEqual((v["status"], v["own_work"]), ("working", True))
 
 
+class CodexCodeMode(unittest.TestCase):
+    """SHEP-207: Codex 0.163+ code mode runs its commands from a script (one exec call with
+    tools.exec_command and tools.write_stdin inside Promise.allSettled). A poll's result drops its
+    session id once the command exited, so each result is matched to the session its call polled,
+    and a Codex job counts only while its agent's process tree runs something besides the code-mode
+    host. The items are a real run's (fixtures/codex-code-mode); the process tree is faked (ps)."""
+
+    setUp = OwnBackgroundWork.setUp
+    stamp, status = OwnBackgroundWork.stamp, OwnBackgroundWork.status
+
+    def setUp_ps(self, ps=""):
+        """The `ps` output codex_working() reads (the rest of the test's processes: none)."""
+        from types import SimpleNamespace
+        if not hasattr(self, "ps"):
+            p = self.mock.patch.object(self.agents, "run", lambda args, **kw: SimpleNamespace(stdout=self.ps), create=True)
+            p.start()
+            self.addCleanup(p.stop)
+        self.ps = ps
+
+    def replay(self, n=None):
+        with open(os.path.join(ROOT, "test", "fixtures", "codex-code-mode", "rollout-items.jsonl")) as f:
+            items = [json.loads(line) for line in f if line.strip()]
+        for i, item in enumerate(items[:n]):
+            self.stamp(-300_000 + i * 1000, item)
+
+    def codex(self, ps_pid=100):
+        return [{"address": "t1", "status": {"state": "idle"}, "labels": {"herdr.role": "worker"},
+                 "foreground": {"pid": ps_pid, "name": "codex"}}]
+
+    def test_each_poll_ends_its_own_session(self):
+        self.setUp_ps()
+        self.replay(2)  # both commands started: their results carry their session ids
+        self.assertEqual(sorted(self.agents.background_jobs(self.log)[0]), ["codex:50495", "codex:69674"])
+        self.replay(4)  # the script polls both in one call: "Script running with cell ID 2"
+        self.assertEqual(sorted(self.agents.background_jobs(self.log)[0]), ["codex:50495", "codex:69674"])
+        self.replay()  # wait on cell 2: alpha's result has no session id (exited), beta still runs
+        jobs, ended = self.agents.background_jobs(self.log)
+        self.assertEqual(list(jobs), ["codex:50495"])
+        self.assertGreater(ended, 0)
+
+    def test_a_result_without_its_id_ends_the_session_its_place_polled(self):
+        self.setUp_ps()
+        self.stamp(-300_000, {"type": "response_item", "payload": {"type": "custom_tool_call", "call_id": "p1", "name": "exec",
+                              "input": "await Promise.allSettled([tools.write_stdin({session_id:7, chars:''}), tools.write_stdin({session_id:8, chars:''})])"}})
+        self.stamp(-299_000, {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "p1", "output": [
+            {"type": "input_text", "text": "[{\"status\":\"fulfilled\",\"value\":{\"exit_code\":0,\"output\":\"\"}},"
+                                         "{\"status\":\"fulfilled\",\"value\":{\"session_id\":8,\"output\":\"\"}}]"}]}})
+        self.assertEqual(list(self.agents.background_jobs(self.log)[0]), ["codex:8"])
+
+    def test_a_code_mode_job_with_no_process_is_over(self):
+        """The bug: the log still counts beta, but its agent is idle and no command runs under it."""
+        self.setUp_ps("100 1 codex --no-daemon\n101 100 /usr/local/lib/codex/codex-code-mode-host\n")
+        self.replay(4)
+        live = self.codex()
+        self.assertEqual(self.status(live)[:2], ("needs", "reply"))
+        self.assertFalse(self.agents.own_work(self.task, live, ready=True))
+
+    def test_a_running_command_under_the_agent_is_still_work(self):
+        self.setUp_ps("100 1 codex --no-daemon\n101 100 /usr/local/lib/codex/codex-code-mode-host\n"
+                      "102 101 /bin/bash -lc sleep 60\n")
+        self.replay(4)
+        live = self.codex()
+        self.assertEqual(self.status(live)[:2], ("working", None))
+        self.assertTrue(self.agents.own_work(self.task, live, ready=True))
+
+    def test_an_agent_without_a_pid_keeps_the_log_s_word(self):
+        self.setUp_ps()
+        self.replay(4)
+        self.assertEqual(self.status()[:2], ("working", None))
+
+    def test_the_old_write_stdin_format_still_ends(self):
+        self.setUp_ps()
+        self.stamp(-300_000, {"type": "response_item", "payload": {"type": "function_call", "call_id": "c1", "name": "exec_command",
+                              "arguments": json.dumps({"cmd": "gh run watch"})}})
+        self.stamp(-300_000, {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "c1",
+                              "output": "Process running with session ID 42"}})
+        self.stamp(-200_000, {"type": "response_item", "payload": {"type": "function_call", "call_id": "c2", "name": "write_stdin",
+                              "arguments": json.dumps({"session_id": 42, "chars": ""})}})
+        self.stamp(-100_000, {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "c2",
+                              "output": "Process exited with code 0\nOutput:\nok"}})
+        self.assertEqual(self.agents.background_jobs(self.log)[0], {})
+
+    def test_codex_working_reads_the_process_tree(self):
+        codex = {"foreground": {"pid": 100}}
+        self.setUp_ps("100 1 codex\n101 100 codex-code-mode-host\n")
+        self.assertFalse(self.agents.codex_working(codex))
+        self.setUp_ps("100 1 codex\n101 100 codex-code-mode-host\n102 101 sleep 9\n")
+        self.assertTrue(self.agents.codex_working(codex))
+        self.assertTrue(self.agents.codex_working({}))  # no pid: its log decides
+
+
 class NoFalseNeedsYou(unittest.TestCase):
     """SHEP-133: no Needs you for a few seconds that moves on by itself. A quiet agent or a problem
     Herdr found needs the person only after a grace (GRACE_MS); asking needs them at once; Herdr's
@@ -2116,6 +2207,24 @@ class TimeLeft(unittest.TestCase):
             self.assertIn("rough guess beats none", words)
         self.assertIn(templates.WORKER_MD_BEFORE_LEFT, templates.OLD_WORKERS)  # an unedited old one gets today's
 
+    def test_a_status_at_least_every_5_minutes_its_time_left_revised_honestly(self):
+        """SHEP-214: the system prompt and the brief's footer both ask for a status at least every 5
+        minutes and an honest --left each time; an unedited earlier template gets today's words."""
+        from herdr_task import templates
+        with open(os.path.join(BIN, "herdr_task", "launch.py")) as f:
+            launch = f.read()
+        with open(os.path.join(ROOT, "templates", "worker.md")) as f:
+            worker = f.read()
+        for words in (templates.WORKER_MD, worker, launch):
+            self.assertIn("at least every 5 minutes while you work", words)
+            self.assertIn("revise it honestly", words)
+            self.assertNotIn("update it at every step", words)
+        with open(os.path.join(ROOT, "templates", "worker.md")) as f:
+            line = [x for x in f.read().splitlines() if x.startswith("- Say how it's going")]
+        self.assertEqual(line, [x for x in templates.WORKER_MD.splitlines() if x.startswith("- Say how it's going")])
+        self.assertIn(templates.WORKER_MD_BEFORE_OFTEN, templates.OLD_WORKERS)
+        self.assertNotEqual(templates.WORKER_MD_BEFORE_OFTEN, templates.WORKER_MD)
+
 
 class ReviewAsAHelperAgent(unittest.TestCase):
     """SHEP-54: workers run their review as an interactive hc child people see, never headless; an
@@ -2264,6 +2373,44 @@ class ReadOnlyStore(unittest.TestCase):
                     with store.Store(loc):
                         pass
                 self.assertIn("read-only", str(e.exception))
+
+
+class ReadOnlyAutopilot(unittest.TestCase):
+    """#900: autopilot list and show read the autopilot state in a read-only sandbox (a Codex
+    reviewer's) without a writable lock; a change is refused with a clear message, never a traceback."""
+
+    def test_reads_without_a_writable_lock(self):
+        import builtins
+        import errno
+        from unittest import mock
+        sys.path.insert(0, BIN)
+        from herdr_task import autopilot, store
+        d = tempfile.mkdtemp()
+        stash = os.path.join(d, "tasks")
+        os.makedirs(stash)
+        state_file = os.path.join(stash, ".autopilot.json")
+        with open(state_file, "w") as f:
+            json.dump({"version": 2, "spaces": {"sp1": {"on": True}}}, f)
+        real = builtins.open
+
+        def ro(path, mode="r", *a, **k):
+            if any(c in mode for c in "wax+"):
+                raise OSError(errno.EROFS, "Read-only file system", path)
+            return real(path, mode, *a, **k)
+        with mock.patch.object(autopilot, "STORE", stash), mock.patch.object(autopilot, "STATE", state_file), \
+                mock.patch.object(store, "STORE", stash), mock.patch.object(store, "open", ro, create=True), \
+                mock.patch.object(autopilot, "open", ro, create=True):
+            # No lock file yet (read-only, so it can't be made): a read still works.
+            with autopilot.state(write=False) as st:
+                self.assertTrue(st["spaces"]["sp1"]["on"])
+            # With a lock file there, a read takes it shared.
+            open(os.path.join(stash, ".autopilot.lock"), "w").close()
+            with autopilot.state(write=False) as st:
+                self.assertTrue(st["spaces"]["sp1"]["on"])
+            with self.assertRaises(autopilot.Fail) as e:
+                with autopilot.state(write=True):
+                    pass
+            self.assertIn("read-only", str(e.exception))
 
 
 class PrLooks(unittest.TestCase):
@@ -2816,6 +2963,58 @@ class MachineHoldFollowsSettings(unittest.TestCase):
         self.assertEqual(self.hold(), "vm-demo's disk is 96% full")
 
 
+class MacMemoryIsWhatMacOSCallsFree(unittest.TestCase):
+    """SHEP-199 / GitHub #922: on a Mac the memory hold reads macOS's own free share
+    (kern.memorystatus_level, the figure memory_pressure prints), not a sum of vm_stat pages that
+    leaves out the cache macOS counts as free. Only sysctl and vm_stat are faked; the numbers are
+    the report's: vm_stat's sum says 81% used, macOS says 39% free (61% used)."""
+
+    TOTAL = 16 * 2 ** 30  # 16 GB, 16 KB pages: 1048576 pages
+    VM_STAT = """Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                 40000.
+Pages active:                              300000.
+Pages inactive:                            120000.
+Pages speculative:                           9000.
+Pages throttled:                                0.
+Pages wired down:                          150000.
+Pages purgeable:                            30000.
+File-backed pages:                          90000.
+Anonymous pages:                           250000.
+Pages stored in compressor:                 80000.
+Pages occupied by compressor:               40000.
+"""
+
+    def setUp(self):
+        from unittest import mock
+        sys.path.insert(0, BIN)
+        import herdr_task.machine as machine
+        self.machine = machine
+        self.sysctl_level = "39\n"
+        fake = {"sysctl -n hw.memsize": "%d\n" % self.TOTAL, "vm_stat": self.VM_STAT}
+
+        def run(argv, timeout=10):
+            key = " ".join(argv)
+            if key == "sysctl -n kern.memorystatus_level":
+                return self.sysctl_level
+            return fake.get(key, "")
+        for name, value in (("MAC", True), ("_run", run)):
+            p = mock.patch.object(machine, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_uses_the_free_share_macos_reports(self):
+        total, used = self.machine._memory()
+        self.assertEqual(total, self.TOTAL)
+        self.assertEqual(round(used * 100 / total), 61)  # 100 - 39, not vm_stat's 81
+        self.assertEqual(self.machine.sample()["memory"], 61)
+
+    def test_without_the_sysctl_counts_vm_stat_pages(self):
+        self.sysctl_level = ""
+        total, used = self.machine._memory()
+        # free + inactive + speculative + purgeable = 199000 of 1048576 pages: 81% used
+        self.assertEqual(round(used * 100 / total), 81)
+
+
 class ReviewedNamesItsCommit(unittest.TestCase):
     """#797: `reviewed --commit <sha>` records a round on the commit it reviewed, fixes committed
     since; only a commit on the task's branch. A throwaway git repo; hc and gh are never run."""
@@ -2959,9 +3158,9 @@ class Revive(unittest.TestCase):
         self.log = os.path.join(self.dir, "S1.jsonl")
         open(self.log, "w").close()
         self.terms = {}
-        self.sent, self.screens, self.sessions = [], {}, {}
+        self.sent, self.sent_env, self.screens, self.sessions = [], [], {}, {}
 
-        def hc(args):
+        def hc(args, env=None):
             out, code = "", 0
             if args[:2] == ["hc", "label"]:
                 k, v = args[3].split("=", 1)
@@ -2970,6 +3169,7 @@ class Revive(unittest.TestCase):
                 # each line first clears a parent Claude Code session's markers (SHEP-86)
                 self.assertTrue(args[3].startswith(revive.CLEAN_ENV + " "), args[3])
                 self.sent.append((args[2], args[3][len(revive.CLEAN_ENV) + 1:]))
+                self.sent_env.append(env)
             elif args[:2] == ["hc", "read"]:
                 out = self.screens.get(args[2], "")
             else:
@@ -3036,6 +3236,21 @@ class Revive(unittest.TestCase):
         self.assertIn("<restart>", self.sent[1][1])
         self.assertIn(file, self.sent[1][1])
         self.assertNotIn("Private role instructions.", self.sent[1][1])
+
+    def test_the_line_goes_into_the_shell_with_no_caller(self):
+        """SHEP-202 (GitHub #925): the scheduler runs under an agent's HC_TERMINAL_ID, and hc then wraps the typed
+        line in <hc from=…> when the shell reports its status, so bash or zsh can't run it. Sent with no caller."""
+        with self.mock.patch.dict(os.environ, {"HC_TERMINAL_ID": "t2"}):
+            self.assistant()
+            self.tick()
+            self.crash("t1")
+            self.tick()
+            # None would mean the inherited environment, which holds HC_TERMINAL_ID here
+            env = self.sent_env[0] if self.sent_env and self.sent_env[0] is not None else dict(os.environ)
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("command claude --model opus --resume S1", self.sent[0][1])
+        self.assertNotIn("HC_TERMINAL_ID", env)
+        self.assertIn("PATH", env)
 
     def test_a_working_agent_carries_on(self):
         self.assistant(status="working")
@@ -4323,7 +4538,7 @@ class TaskFlow(unittest.TestCase):
         self.git(self.main, "worktree", "add", "-q", "-b", "task/1", wt, "HEAD")
         self.live = []
         self.said = []
-        self.store = Store([{"id": 1, "title": "Flow", "state": "running", "mode": "worktree", "worktree": wt,
+        self.store = Store([{"id": 1, "title": "Flow", "skill": "hc-build", "state": "running", "mode": "worktree", "worktree": wt,
                              "branch": "task/1", "base": "main", "start": self.git(wt, "rev-parse", "HEAD"), "agents": [],
                              "started": 1}])
         self.store.loc["folder"] = self.main
@@ -4368,6 +4583,60 @@ class TaskFlow(unittest.TestCase):
         got.clear()
         self.commands.cmd_switch(self.args(space=None, agent="claude", argv=None, parent=None, keep=False))
         self.assertEqual(got, ["sp-a"])  # none given: the old agent's own space
+
+    def switch_events(self, me=None):
+        """cmd_switch with the old agent t1 mid-turn on session S1: what it ran, in order."""
+        self.live = [{"address": "t1", "status": {"state": "working"}, "labels": {"herdr.task.space": "sp-a"}}]
+        self.task["agents"] = [{"address": "t1", "agent": "claude", "argv": ["claude"], "at": 1, "session": "S1"}]
+        events = []
+        self.patch(self.commands, "agent_running", lambda k: True)
+        self.patch(self.commands, "refresh_sessions", lambda *a: None)
+        self.patch(self.commands, "stop_note", lambda *a, **k: None)
+        self.patch(self.commands, "unarchive", lambda *a: None)
+        self.patch(self.commands, "parent_for", lambda parent, space: parent)
+        self.patch(self.commands, "run", lambda argv, **k: events.append(("run", argv)))
+
+        def launch(s, t, argv, space, message=None, parent=None, resume=None, role=None):
+            events.append(("launch", resume, message))
+            return {"address": "t2", "agent": "claude", "argv": argv}
+        self.patch(self.commands, "launch", launch)
+        env = {k: v for k, v in os.environ.items() if k != "HC_TERMINAL_ID"}
+        if me:
+            env["HC_TERMINAL_ID"] = me
+        with self.mock.patch.dict(os.environ, env, clear=True):
+            self.commands.cmd_switch(self.args(space=None, agent=None, argv='["claude", "--model", "opus"]', parent=None,
+                                               keep=False))
+        return events
+
+    def test_switch_ends_the_old_agent_before_resuming_its_session(self):
+        """SHEP-211: switch resumed the old agent's session while the old agent was mid-turn, then killed it: the
+        new agent sat on "Interrupted" with no message (a false "needs you"). Now the old one ends first, and the
+        resumed session gets a first message to carry on."""
+        events = self.switch_events()
+        self.assertEqual(events[0], ("run", ["hc", "kill", "t1"]))
+        self.assertEqual([e[0] for e in events], ["run", "launch"])
+        _, resume, message = events[1]
+        self.assertEqual(resume, ["claude", "--model", "opus", "--resume", "S1"])
+        self.assertEqual(message, self.commands.SWITCH_NUDGE)
+        self.assertEqual(self.said[-1], "SHEP-1: claude t2 resumed its session, t1 ended")
+
+    def test_switch_keeps_the_worker_and_queue_when_assignment_is_missing(self):
+        self.task.pop("skill")
+        self.task.update(state="queued", queue=9)
+        with self.mock.patch.object(self.commands, "end_agent") as end, \
+             self.mock.patch.object(self.commands, "start_again", wraps=self.commands.start_again) as start:
+            with self.assertRaisesRegex(self.commands.Fail, "require a HolyCow skill"):
+                self.switch_events()
+            end.assert_not_called()
+            start.assert_not_called()
+        self.assertEqual(self.task["state"], "queued")
+        self.assertEqual(self.task["queue"], 9)
+
+    def test_an_agent_switching_itself_ends_after_the_new_one_starts(self):
+        """SHEP-211: ending the caller first would end the switch command with it."""
+        events = self.switch_events(me="t1")
+        self.assertEqual([e[0] for e in events], ["launch", "run"])
+        self.assertEqual(events[1], ("run", ["hc", "kill", "t1"]))
 
     def settings(self, d):
         import herdr_task.settings as settings
@@ -4490,6 +4759,36 @@ class TaskFlow(unittest.TestCase):
         with self.assertRaises(Exception) as e:
             github.pr_open(self.store, self.task, "o/r")
         self.assertIn("Couldn't push task/1", str(e.exception))
+
+    def test_the_pull_request_title_and_body_are_short(self):
+        """SHEP-198 (GitHub #924): the title follows the repo's commit titles ("SHEP-198: ..."), and the
+        body is the summary, details and proof's title, never the brief."""
+        import herdr_task.github as github
+        wt, remote = self.task["worktree"], os.path.join(self.root, "remote.git")
+        self.git(self.root, "init", "-q", "--bare", remote)
+        self.git(self.main, "remote", "add", "origin", remote)
+        self.commit(wt, "work", "a.txt")
+        ref = self.store.ref(self.task)
+        self.task.update({"title": "Flow", "prompt": "BRIEF-ONLY-LINE do the whole thing", "details": "- Checked the flow",
+                          "proof": {"id": "a-1", "title": f"{ref}: Flow · Proof"}})
+        asked = []
+
+        def gh(*a, **k):
+            asked.append(a)
+            return (True, "https://github.com/o/r/pull/9", "") if a[:2] == ("pr", "create") else (True, "[]", "")
+        self.patch(github, "gh", gh)
+        self.assertEqual(github.pr_open(self.store, self.task, "o/r", "The flow works now")["number"], 9)
+        create = next(a for a in asked if a[:2] == ("pr", "create"))
+        title, body = create[create.index("--title") + 1], create[create.index("--body") + 1]
+        self.assertEqual(title, f"{ref}: Flow")
+        self.assertNotIn("BRIEF-ONLY-LINE", body)
+        self.assertIn(f"Task: {ref}", body)
+        self.assertIn("The flow works now", body)
+        self.assertIn("- Checked the flow", body)
+        self.assertIn(f"{ref}: Flow · Proof", body)
+        self.assertLess(len(body), 400)
+        # A title that already names the ref doesn't name it twice.
+        self.assertEqual(github.pr_title(self.store, {**self.task, "title": f"{ref} Flow"}), f"{ref}: Flow")
 
     def test_ready_keeps_the_pull_request_the_task_continues(self):
         """#828: the work pushed to an open pull request's own branch: ready takes that one, never a second."""

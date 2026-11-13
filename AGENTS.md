@@ -11,6 +11,12 @@ How to run, build and lay out the code: [docs/develop.md](docs/develop.md).
 - Installer tests run from `test/`: `cd test && python3 -m unittest test_install`. To run an older installer copy for a
   before-check, export `SHEPHERDR_HANDED_OVER=1` (else it hands over to the source's `bin/shepherdr`), and use a full
   `git archive` of the tree, since `herdr_task` lives beside `bin/`.
+- herdr-browser's library check: `test/test_herdr_browser_libs.py` fakes ldd and agent-browser; a real missing-library
+  Chrome needs gcc, linking a library built with `-Wl,-soname` and then deleted.
+- herdr-browser's AppArmor case: test with `HERDR_BROWSER_USERNS_SYSCTL` and `HERDR_BROWSER_APPARMOR_D` stand-ins; a real
+  refusal: `sudo sysctl user.max_user_namespaces=0`, then restore the old value.
+- Read-only sandbox check: `chmod 555` a scratch dir, run herdr-task with `HERDR_TASK_STORE=<dir>`; a read must not
+  need the lock file to be writable.
 - Never run herdr-app or herdr-task with a changed `HOME` or `HERDR_APP_HOME`, never start a second herdr-app window,
   and never install into the real `~/.config/herdr-app` for a try: use `./install.sh --root <scratch>`. A window or
   scheduler on another home can overwrite every machine's spaces.
@@ -18,8 +24,11 @@ How to run, build and lay out the code: [docs/develop.md](docs/develop.md).
   settings to other machines).
 - Window-mod methods (e.g. chat's `refocus()`) can be tested by extracting the method text from `mods/chat/main.js`
   and running it in node with stubs (see `test/test_chat_refocus.py`).
+- Mark up (`mods/artifacts/markup.js`) imports must be listed in `MARKUP_HELPERS` in `mods/artifacts/bin/herdr-artifact`
+  so each published artifact carries them; `test_every_installed_import_resolves` checks the imports.
 - Header layout checks: the web app keeps its pinned-lists and sidebar state across page loads, so a stub page can
-  start with leftovers; set localStorage then reload, or use a new port.
+  start with leftovers; set localStorage then reload, or use a new port. Never `pkill -f` a stub: it matches your own
+  shell.
 - GitHub runs the whole check on every pull request to main and after each merge: the Check workflow
   (`.github/workflows/check.yml`). Merging waits for it. A failure's log is `gh run view <run> --log-failed`.
 - Still write tests with your change: the installer's in `test/test_install.py`, the repo's rules in
@@ -63,7 +72,8 @@ How to run, build and lay out the code: [docs/develop.md](docs/develop.md).
 - Another machine in herdr-task tests: run herdr-task as a subprocess with `HERDR_TASK_STORE=<tmp>` and a fake hc first on
   PATH (see AutomationFromAnotherMachine).
 - Python tests: each `test/test_*.py` imports `home_guard` first (a throwaway HOME for the run; touching the real home
-  fails the test). Run them with `discover -s test` or from `test/`.
+  fails the test). Run them with `discover -s test` or from `test/`; one class from `test/` with
+  `cd test && python3 -m unittest test_herdr_task.ClassName` (from the repo root the module import fails).
 - Tests that run accept or merge with the real `finish()` must stub `github.live_agents` and `live_helpers` (hc is
   refused under test).
 - Bun.spawn ignores a PATH changed inside a test: point the service at fakes with `SHEPHERDR_HERDR_APP` / `SHEPHERDR_HC`.
@@ -77,6 +87,8 @@ How to run, build and lay out the code: [docs/develop.md](docs/develop.md).
   `claude -p --append-system-prompt templates/assistant.md` in a scratch repo with fake herdr-task/hc on PATH.
 - Web stub: a place's `chat` is its chat key string (the chat object goes only in the watch reply). Headless screenshots
   never show native `title=` tooltips: check with `document.querySelectorAll('[title]')`.
+- Viewer CSS: `web/src/styles.css` must list `./screens` (`@source`) or the artifact viewer build drops `Recipe.tsx`
+  classes such as `@lg:`.
 - Before/after web screenshots: build main's version of the changed files into a scratch dist (`git checkout main --
   <files>`, `bun run build`, copy `web/dist`, `git checkout HEAD -- web`) and run one stub per dist on different ports.
 - Crash recovery for real: a throwaway core, `HC_SESSION=<name> hc ...` with `HC_TERMINAL_SOCKET` and Claude's
@@ -84,6 +96,9 @@ How to run, build and lay out the code: [docs/develop.md](docs/develop.md).
 - Service code against a throwaway core (`HC_SESSION=x`): Hub ignores `HC_SESSION`, so pass `new Hub(<wrapper script
   that exports HC_SESSION and execs hc>)` and set `SHEPHERDR_HC` to it; start that core from `env -i` or its agents
   inherit `CLAUDE_CODE_CHILD_SESSION` (no transcripts).
+- A real `herdr-task switch` test without touching people's tasks: a fake hc on PATH exporting `HC_SESSION=<name>`,
+  `HERDR_TASK_STORE=<tmp>`, a scratch git repo with `add --here` and `start --space <any>`; answer the trust prompt with
+  `hc keys <t> down enter`. Claude refuses a plain sleep, so give the brief a busy step.
 - Web stub: localStorage `shepherdr.lists` = `{pinned:true,chips:[],at:null}` opens `?task=<id>` in the middle column
   (same width as the Assistant's) instead of the side.
 
