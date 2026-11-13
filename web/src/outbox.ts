@@ -36,6 +36,9 @@ export interface Outgoing {
   /** why it didn't go through */
   error?: string
   /** it went in but never showed in the chat: Retry sends it as a new message */
+  attempted?: boolean
+  checked?: boolean
+  checking?: boolean
   lost?: boolean
   /** when the chat first showed a newer message of yours than it, by this screen's clock: the log moved past it */
   pastAt?: number
@@ -60,11 +63,6 @@ const KEEP_SENDING = GIVE_UP + 60_000
 export const KEEP_SENT = 2 * 60_000
 /** and after this however long its agent seems to work (one that stays working for good would keep it forever) */
 const KEEP_BUSY = 30 * 60_000
-/** one the log moved past without it (it came back changed: two messages in one, its pictures as markers) goes after
- *  this: it is in the chat already, as the agent got it */
-export const KEEP_PAST = 60_000
-/** a screen keeps no pending one longer than this */
-const KEEP_OUT = 24 * 60 * 60_000
 /** one waiting that the chat never showed waiting (a machine out of reach) fails after this */
 const KEEP_WAITING = 30 * 60_000
 
@@ -107,11 +105,7 @@ export function settle(out: Outgoing[], chat: Chat, now = Date.now()): Outgoing[
     }
     if (o.state === 'sending' || o.waiting || o.serverAt === undefined) return [o]
     const parts = sameAs(o, chat, taken)
-    if (!parts) {
-      if (o.pastAt || !(o.state === 'sent' || o.lost) || !movedPast(o, chat)) return [o]
-      changed = true
-      return [{ ...o, pastAt: now }]
-    }
+    if (!parts) return [o]
     for (const id of parts) taken.add(id)
     changed = true
     return []
@@ -160,12 +154,6 @@ function sameAs(o: Outgoing, chat: Chat, taken: Set<string>): string[] | null {
   return ids.length ? ids : null
 }
 
-/** the chat shows a message of yours newer than it (the agent takes them in order): it won't come back as it was */
-function movedPast(o: Outgoing, chat: Chat) {
-  const prior = new Set(o.prior ?? [])
-  return chat.messages.some((m) => m.who === 'you' && !m.waiting && !prior.has(m.id) && (m.at ?? 0) > o.serverAt! + SLACK)
-}
-
 /** your latest messages a chat shows now (older ones are long before anything you send next): none of them is it */
 export function priorOf(chat: Chat | undefined): string[] {
   return (chat?.messages ?? [])
@@ -174,22 +162,17 @@ export function priorOf(chat: Chat | undefined): string[] {
     .map((m) => m.id)
 }
 
-/** one the log moved past goes; what didn't go through in time fails, keeping its words and files for Retry: one still sending long after its time
+/** What did not go through in time stays available for recovery: one still sending long after its time
  *  (the screen reloaded while it was on its way), one that went in but never showed in the chat (counted from when its
  *  agent last worked: a working CLI keeps it until its next step), and one waiting for a machine out of reach for long */
 export function expire(out: Outgoing[], now: number, working: (chat: string) => boolean = () => false): Outgoing[] {
   let changed = false
   const next = out.flatMap((o) => {
-    // the log moved past it a while ago: it is in the chat as the agent got it
-    if (o.pastAt && now - o.pastAt > KEEP_PAST) {
-      changed = true
-      return []
-    }
     const fail = (error: string, lost?: boolean) => {
       changed = true
       return { ...o, state: 'failed' as const, error, lost }
     }
-    if (o.state === 'sending' && now - o.at > KEEP_SENDING) return fail("Couldn't reach BossGoat.")
+    if (o.state === 'sending' && now - o.at > KEEP_SENDING) return fail("Couldn't reach BossGoat.", o.attempted)
     if (o.state === 'sent' && !o.waiting && now - (o.wentAt ?? o.at) > KEEP_BUSY) return fail("It didn't show up in the chat.", true)
     if (o.state === 'sent' && !o.waiting && working(o.chat)) {
       // noted now and then, not on every tick: it is saved with the rest
@@ -204,10 +187,9 @@ export function expire(out: Outgoing[], now: number, working: (chat: string) => 
   return changed ? next : out
 }
 
-/** what a screen keeps when it loads: none older than a day, and none for a chat that is gone (exists: whether a chat
- *  is still there, once the screen knows) */
+/** Keep pending messages regardless of age; remove only chats known to have been deleted. */
 export function prune(out: Outgoing[], now: number, exists?: (chat: string) => boolean): Outgoing[] {
-  const next = out.filter((o) => now - o.at < KEEP_OUT && (!exists || exists(o.chat)))
+  const next = out.filter((o) => !exists || exists(o.chat))
   return next.length === out.length ? out : next
 }
 
@@ -282,17 +264,18 @@ export function loadOutbox(): Outgoing[] {
   try {
     for (const k of OLD) localStorage.removeItem(k)
     const v = JSON.parse(localStorage.getItem(STORE) ?? '[]')
-    return Array.isArray(v) ? prune(v, Date.now()) : []
+    return Array.isArray(v) ? prune(v, Date.now()).map((o) => o.state === 'sending' && o.attempted
+      ? { ...o, state: 'failed', lost: true, checking: false, checked: false, error: 'Delivery unconfirmed after restart.' } : o) : []
   } catch {
     return []
   }
 }
 
-export function saveOutbox(out: Outgoing[]) {
+export function saveOutbox(out: Outgoing[], strict = false) {
   try {
     if (out.length) localStorage.setItem(STORE, JSON.stringify(out))
     else localStorage.removeItem(STORE)
   } catch {
-    /* private window: it still shows until the screen reloads */
+    if (strict) throw new Error("Could not save this message on this device. Free storage or allow site storage, then retry.")
   }
 }

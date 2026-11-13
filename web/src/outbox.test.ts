@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { expire, KEEP_PAST, loadOutbox, partsOf, settle, type Outgoing } from './outbox.ts'
+import { expire, loadOutbox, prune, saveOutbox, partsOf, settle, type Outgoing } from './outbox.ts'
 import type { Chat } from '@shared/types.ts'
 
 // What you sent comes back from the agent's log without its id: it takes the pending one's place by its words, files
@@ -76,17 +76,17 @@ test('pictures alone still need their files', () => {
   expect(settle(out, chat([{ id: 'u2:n', who: 'you', at: 10_800, images: 2 }]))).toBe(out)
 })
 
-test('came back changed (two in one), the log moved past it: it goes a minute later, never stuck under the rest', () => {
+test('a newer message is not proof of delivery: the unmatched message stays recoverable', () => {
   const o = sent({ text: 'thumbnails broken', files: pics })
   const moved = chat([{ id: 'u2', who: 'you', at: 10_800, text: 'thumbnails brokenand more' }, { id: 'a1', who: 'agent', at: 20_000, text: 'ok' }, { id: 'u3', who: 'you', at: 30_000, text: 'hi' }])
   const [past] = settle([o], moved, 50_000)
-  expect(past).toMatchObject({ pastAt: 50_000 })
+  expect(past).toEqual(o)
   expect(settle([past], moved, 51_000)).toEqual([past])
-  expect(expire([past], 50_000 + KEEP_PAST - 1)).toEqual([past])
-  expect(expire([past], 50_000 + KEEP_PAST + 1)).toEqual([])
+  expect(expire([past], 50_000 + 60_000 - 1)).toEqual([past])
+  expect(expire([past], 50_000 + 60_000 + 1)).toEqual([past])
   // one that failed after it went in goes too
   const [lost] = settle([{ ...o, state: 'failed', lost: true }], moved, 50_000)
-  expect(lost).toMatchObject({ pastAt: 50_000 })
+  expect(lost).toMatchObject({ state: 'failed', lost: true })
 })
 
 test('nothing of yours after it: it stays (the agent may take it later)', () => {
@@ -147,3 +147,24 @@ test('two sent at once: once the first is in the chat, the second stays under it
   // without A before it, it would sit right after a1
   expect(placesOf(rows, [{ cid: 'B', after: 'a1' }]).get('B')).toBe(1)
 })
+
+
+test('a restart keeps old pending messages and flags an interrupted dispatch without resending', () => {
+  const g = globalThis as { localStorage?: unknown }, was = g.localStorage;
+  const out = [sent({ cid: 'unsent', at: 1, state: 'sending' }), sent({ cid: 'attempted', at: 1, state: 'sending', attempted: true, files: pics })];
+  g.localStorage = { getItem: () => JSON.stringify(out), removeItem: () => {} };
+  try {
+    const restored = loadOutbox();
+    expect(restored).toHaveLength(2);
+    expect(restored[0].state).toBe('sending');
+    expect(restored[1]).toMatchObject({ state: 'failed', lost: true, files: pics });
+    expect(prune(restored, Date.now())).toHaveLength(2);
+  } finally { g.localStorage = was; }
+});
+
+test('a failed durable save blocks dispatch instead of claiming restart safety', () => {
+  const g = globalThis as { localStorage?: unknown }, was = g.localStorage;
+  g.localStorage = { setItem: () => { throw new Error('quota'); } };
+  try { expect(() => saveOutbox([sent()], true)).toThrow('Could not save'); }
+  finally { g.localStorage = was; }
+});

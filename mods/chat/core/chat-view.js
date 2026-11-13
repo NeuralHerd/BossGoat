@@ -29,7 +29,7 @@ export const WORDS = {
   resuming: "Resuming…",
   emptyTitle: "What should the Assistant do?",
   emptyBody: "It plans the work, starts a task for each part and keeps you posted.",
-  late: "Not in the conversation. Check the terminal.",
+  late: "Delivery unconfirmed. Use Check delivery above.",
   // an Assistant asked for on a machine that's offline: its first message waits for it
   offline: (machine) => `${machine} is offline. The Assistant starts when it's back.`,
   publishing: "Publishing an artifact…",

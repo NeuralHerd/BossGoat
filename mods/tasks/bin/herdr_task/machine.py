@@ -130,7 +130,7 @@ def hold_reason(h, limits=None):
 
 SOON = 3600 * 1000
 WEEK = 7 * 86400 * 1000
-DUE = {"state": "unknown", "why": "Its sign-in is due for renewal: the next agent here will do it"}
+DUE = {"state": "unknown", "why": "Sign-in needs renewal. Open the agent on this machine, then refresh usage."}
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 PATHS = [os.path.join(HOME, ".local", "bin"), "/usr/local/bin", "/opt/homebrew/bin", os.path.join(HOME, ".npm-global", "bin"),
          os.path.join(HOME, ".bun", "bin"), os.path.join(HOME, ".claude", "local")]
@@ -598,7 +598,7 @@ def cursor():
         return parse_cursor(usage, plan)
     except urllib.error.HTTPError as e:
         e.close()
-        why = "its sign-in is due for renewal; the next agent here will do it" if e.code == 401 else "Cursor's usage service refused the read (HTTP %d)" % e.code
+        why = "Sign-in needs renewal. Open Cursor on this machine, then refresh usage." if e.code == 401 else "Cursor's usage service refused the read (HTTP %d)" % e.code
     except ValueError:
         why = "Couldn't read Cursor's saved sign-in or usage response"
     except (OSError, subprocess.SubprocessError):

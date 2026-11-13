@@ -32,8 +32,8 @@ export class Machines {
   }
 
   /** Reads every machine's plan limits again now (the limits list's refresh): those older than a minute. */
-  async checkNow() {
-    for (const s of this.stats.values()) if (Date.now() - (s.limitsAt ?? 0) > 60_000) s.limitsAt = 0;
+  async checkNow(force = false) {
+    for (const s of this.stats.values()) if (force || Date.now() - (s.limitsAt ?? 0) > 60_000) s.limitsAt = 0;
     if (Date.now() - this.voiceAt > 60_000) this.voiceAt = 0;
     await this.poll();
   }

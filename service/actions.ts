@@ -7,6 +7,9 @@ import { appHome, writable } from "./paths.ts";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { sendBody, steerNow, messageBody, refusal, reactionLine, mentionedIn, taskTag } from "../core/send.js";
+import { receipt, UNCONFIRMED } from "../core/delivery.js";
+import { assistantHealth, HEALTH_PROBE, healthProbe } from "../core/assistant-health.js";
+import { starting } from "../core/screens.js";
 import { kindOf } from "../core/chat-reader.js";
 import { WORDS } from "../core/chat-view.js";
 import * as AGa from "../core/agents.js";
@@ -17,10 +20,12 @@ const { READ, withMove, withSection, withoutSection, withSectionName, withIcon, 
 import type { Compat } from "./compat.ts";
 import { worktreeAct } from "./worktrees.ts";
 import { layoutScript } from "./layout-scripts.ts";
-import { noteFailed, once } from "./send-once.ts";
+import { once, waitingSends, cancelWaiting, sendReceipt, confirmSend, confirmedReceipts } from "./send-once.ts";
 import { execTemplate } from "./spaces.ts";
 import * as MA from "../core/machine-add.js";
-import { exec } from "./model.ts";
+import { exec, sh } from "./model.ts";
+import { ChatReader } from "../core/chat-reader.js";
+import { withForeground } from "./chats.ts";
 import { closeSaved, renameSaved, orderSaved, withoutSpace, splitId } from "./saved-spaces.ts";
 
 // The window's own space log (lib/spacelog.js): a space the service closed or renamed with no window is traced there too
@@ -46,8 +51,12 @@ async function sendNow(hub: Hub, b: any, compat: Compat, again = false) {
   const text = str(b.text ?? "").trim();
   if (!text && !(Array.isArray(b.attachments) && b.attachments.length)) throw new Error("nothing to send");
   const t = hub.terminals.get(a);
-  if (!t || t.state !== "live") throw new Error("That agent isn't running.");
+  if (!t || t.state !== "live") throw Object.assign(new Error("That agent isn't running."), { definite: true });
   const io = { hc: asPerson(hub), sleep: (ms: number) => Bun.sleep(ms), status: () => (hub.terminals.get(a) as any)?.status?.state ?? null };
+  if (b.waitForIdle && ((t as any).turn ?? 0) > 0) throw new Error(UNCONFIRMED);
+  const state = (t as any).status?.state;
+  if ((b.hold && ["working", "blocked"].includes(state)) || (b.waitForIdle && state !== "idle") || starting(t))
+    return { ok: true, waiting: true, waitsFor: b.hold ? "turn" : "start" };
   // files sent with it: their paths after the words, as the window's chat sends them (copied first to another machine)
   const sent: string[] = Array.isArray(b.attachments) ? b.attachments : [];
   // never some of them quietly
@@ -63,83 +72,65 @@ async function sendNow(hub: Hub, b: any, compat: Compat, again = false) {
     return landed;
   }));
   const body = [messageBody({ text, quote: typeof b.quote === "string" ? b.quote.slice(0, 2000) : null, tags: typeof b.tags === "string" ? b.tags : "" }), ...files].filter(Boolean).join("\n\n");
-  // held on purpose (Ctrl+Enter, a long press): it goes once the agent stops working
-  const st = (hub.terminals.get(a) as any)?.status?.state;
-  if (b.hold && (st === "working" || st === "blocked")) {
-    const cid = typeof b.cid === "string" ? b.cid.slice(0, 80) : undefined;
-    // once it goes: the chat knows it again by its words (its id and files), so the page sees it went in
-    const note = () => { if (cid) compat.noteSend?.(a, { cid, text, files: sent, at: Date.now() }); };
-    held.push({ addr: a, kind: kindOf(t) ?? "", body, hub, cid, note });
-    drain();
-    return { ok: true, waiting: true, waitsFor: "turn" };
-  }
   // when it began to go in, by this clock: the page knows it again in the chat by it (web/src/outbox.ts sameAs)
   const at = Date.now();
   // what it was, so the chat knows it again while it waits in the CLI's queue
   if (typeof b.cid === "string") compat.noteSend?.(a, { cid: b.cid.slice(0, 80), text, files: sent, at });
   const r: any = await sendBody(io, a, kindOf(t) ?? "", body, again);
   // (stuck: it stayed in Claude Code's box; sent again with this id it gets only its Enter: send-once.ts)
-  if (r.code !== 0) throw Object.assign(new Error(refusal(r).message), { stuck: !!r.stuck });
+  if (r.code !== 0) throw Object.assign(new Error(refusal(r).message), { stuck: !!r.stuck, definite: refusal(r).kind === "blocked" });
   return { ok: true, at };
 }
 
-// Messages held until their agent is free, sent in order, each once.
-const held: { addr: string; kind: string; body: string; hub: Hub; cid?: string; now?: boolean; note?: () => void }[] = [];
-let draining: ReturnType<typeof setInterval> | null = null, busy = false;
-function drain() {
-  draining ??= setInterval(async () => {
-    // one pass at a time: a slow send never overlaps the next tick
-    if (busy) return;
-    busy = true;
-    try {
-      for (const m of [...held]) {
-        const st = (m.hub.terminals.get(m.addr) as any)?.status?.state;
-        const alive = m.hub.terminals.get(m.addr)?.state === "live";
-        if (alive && !m.now && (st === "working" || st === "blocked")) continue;
-        const i = held.indexOf(m);
-        if (i < 0) continue;
-        held.splice(i, 1);
-        // one that can't go now is told to its page (Chat.failed: Not sent, with Retry), never dropped quietly
-        if (alive) m.note?.();
-        const r: any = alive
-          ? await sendBody({ hc: asPerson(m.hub), sleep: (ms: number) => Bun.sleep(ms), status: () => (m.hub.terminals.get(m.addr) as any)?.status?.state ?? null }, m.addr, m.kind, m.body).catch((e: Error) => ({ code: 1, stderr: e.message }))
-          : { code: 1, stderr: "That agent isn't running." };
-        if (r.code !== 0 && m.cid) noteFailed(m.addr, m.cid, refusal(r).message, !!r.stuck);
-      }
-    } finally {
-      busy = false;
+let recovering = false;
+/** Only entries known to be waiting are replayed, in order. In-flight entries require a receipt check. */
+export async function recoverSends(hub: Hub, compat: Compat) {
+  if (recovering) return;
+  recovering = true;
+  const blocked = new Set<string>();
+  try {
+    for (const item of waitingSends()) {
+      const b = item.request, target = b.chat ?? b.addr;
+      if (blocked.has(target)) continue;
+      const address = b.addr ?? compat.addrOf(b.chat);
+      if (address && !hub.terminals.has(address)) continue; // the hub may still be loading its snapshot
+      try {
+        const r: any = await sendOnce(hub, { ...b, cid: item.cid }, compat, true);
+        if (r?.waiting) blocked.add(target);
+      } catch { blocked.add(target); }
     }
-    if (!held.length && draining) { clearInterval(draining); draining = null; }
-  }, 1000);
+  } finally { recovering = false; }
 }
 
-// An Assistant's first message for a space whose machine is offline (the window's chat does the same): kept here and
-// sent again, so the Assistant starts there once the machine is back. One per space, the latest words; a day at most.
-const starts = new Map<string, { b: any; hub: Hub; compat: Compat; at: number }>();
-let startTimer: ReturnType<typeof setInterval> | null = null;
-function startWhenBack() {
-  startTimer ??= setInterval(async () => {
-    const up = new Set((await addedMachines()).filter((m: any) => m.state === "connected").map((m: any) => m.name));
-    for (const [space, w] of [...starts]) {
-      const machine = space.split("/")[0];
-      if (Date.now() - w.at > 86_400_000) starts.delete(space);
-      else if (up.has(machine)) { starts.delete(space); await act(w.hub, w.b, w.compat).catch(() => null); }
+async function checkDelivery(hub: Hub, b: any, compat: Compat) {
+  const was = sendReceipt(String(b.cid ?? ""));
+  const address = typeof b.chat === "string" ? compat.addrOf(b.chat) : b.addr;
+  const r = address ? compat.reader?.(address) ?? new ChatReader({ sh: (script: string, args: string[], on: string | null) => sh(hub, script, args, on) }, address) : null;
+  if (r) {
+    await r.locate(await withForeground(address, hub.terminals.get(address)));
+    await r.pull();
+    const req = was?.request ?? b;
+    const used = confirmedReceipts(address, b.cid);
+    const found = receipt(r.conv?.items?.filter((m: any) => !used.has(m.id)), { text: req.text, at: was?.at ?? b.at, prior: req.prior ?? b.prior, cursorAfter: req.cursorAfter, cid: b.cid, first: !req.addr });
+    if (found) {
+      confirmSend(b.cid, { address, id: found.id });
+      return { delivered: true };
     }
-    if (!starts.size && startTimer) { clearInterval(startTimer); startTimer = null; }
-  }, 15_000);
+  }
+  return { delivered: false, waiting: was?.state === "waiting", unconfirmed: was?.state === "sending", retryable: was?.state === "failed", at: was?.result?.at, message: UNCONFIRMED };
 }
 
-// An Assistant whose CLI showed a screen of its own (trust this folder) before hc could hand it its first message: the
-// template's words and the task go once it is idle past that screen, as the window's chat does (mods/chat follow()).
-function firstWhenIdle(hub: Hub, addr: string, text: string) {
-  const until = Date.now() + 15 * 60_000;
-  const timer = setInterval(async () => {
-    const t: any = hub.terminals.get(addr);
-    if (!t || t.state !== "live" || (t.turn ?? 0) > 0 || Date.now() > until) return clearInterval(timer);
-    if (t.status?.state !== "idle") return;
-    clearInterval(timer);
-    await hub.send(addr, text);
-  }, 2000);
+async function sendOnce(hub: Hub, b: any, compat: Compat, resume = false) {
+  const cid = typeof b.cid === "string" && b.cid ? b.cid.slice(0, 80) : crypto.randomUUID();
+  const reader = compat.reader?.(b.addr ?? compat.addrOf(b.chat) ?? "");
+  const request = { ...b, cid, prior: b.prior ?? reader?.conv?.items?.filter((m: any) => m.kind === "user").map((m: any) => m.id), cursorAfter: b.cursorAfter ?? reader?.end ?? (!b.addr && !compat.addrOf(b.chat) ? 0 : undefined) };
+  if (sendReceipt(cid)?.state === "sending") await checkDelivery(hub, request, compat);
+  return once(cid, (again) => actInner(hub, { ...request, again }, compat), { request, resume });
+}
+
+export async function act(hub: Hub, b: any, compat: Compat): Promise<any> {
+  if (b?.type === "send") return sendOnce(hub, b, compat);
+  return actInner(hub, b, compat);
 }
 
 async function run(cmd: string[]) {
@@ -196,7 +187,22 @@ async function knownAgents(hub: Hub, compat: Compat, machine: string | null): Pr
   return Object.entries(AGENTS).map(([kind, a]) => ({ kind, name: a.name, installed: have.has(a.run[0]), run: a.run }));
 }
 
-export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
+async function actInner(hub: Hub, b: any, compat: Compat): Promise<unknown> {
+  if (b?.type === "delivery-check") return checkDelivery(hub, b, compat);
+  if (b?.type === "assistant-health") {
+    const space = typeof b.chat === "string" && b.chat.startsWith("p:") ? compat.spaceOf(b.chat.slice(2).replace(":", "/")) : null;
+    const address = compat.addrOf(b.chat), t: any = address ? hub.terminals.get(address) : null;
+    const key = kindOf(t) ?? b.agent;
+    const folder = t?.foreground?.cwd ?? t?.cwd ?? space?.folder;
+    let probe = {};
+    if (folder && ["codex", "claude", "cursor"].includes(key)) {
+      const r = await exec(hub, ["sh", "-c", HEALTH_PROBE, "health", key === "cursor" ? "cursor-agent" : key, folder], space?.machine ?? (address?.includes("/") ? address.split("/")[0] : null), 10);
+      if (r.code === 0) probe = healthProbe(r.stdout);
+    }
+    const screen = address ? await hc(["read", address, "--lines", "30"]).catch(() => null) : null;
+    return assistantHealth({ ...probe, agent: key ?? "Agent", phase: t ? (t.state === "live" ? "finding" : "ended") : "fresh", since: typeof b.since === "number" ? b.since : 0,
+      active: !!(address && compat.reader?.(address))?.conv?.items?.some((x: any) => x.kind === "agent"), screen: screen?.stdout ?? t?.status?.message ?? "" });
+  }
   // 2.1's screen names a chat by its key (compat.ts): its terminal here.
   const chat = (key: unknown) => {
     const a = typeof key === "string" ? compat.addrOf(key) : null;
@@ -428,10 +434,10 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
   }
   if ((b?.type === "held-now" || b?.type === "held-drop") && typeof b.cid === "string") {
     // a queued message (the window's Send now and ×): sent at once, or taken back unsent
-    const m = held.find((x) => x.cid === b.cid);
-    if (!m) throw new Error("That message has gone in already.");
-    if (b.type === "held-drop") held.splice(held.indexOf(m), 1);
-    else { m.now = true; drain(); }
+    const m = waitingSends().find((x) => x.cid === b.cid);
+    if (!m) return { ok: false, error: "That message is no longer waiting." };
+    if (b.type === "held-drop") cancelWaiting(b.cid);
+    else return sendOnce(hub, { ...m.request, hold: false }, compat, true);
     return { ok: true };
   }
   if (b?.type === "tab-rename" && (typeof b.place === "string" || typeof b.tab === "string") && typeof b.name === "string") {
@@ -564,10 +570,7 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const task = [text, ...files].join("\n\n");
     // its machine offline: it waits (the web shows it waiting to be reached) and starts once the machine is back
     if (sp.machine && !(await addedMachines()).some((m: any) => m.name === sp.machine && m.state === "connected")) {
-      const was = starts.get(space)?.b.text;
-      starts.set(space, { b: { ...b, text: was ? `${was}\n\n${text}` : text }, hub, compat, at: Date.now() });
-      startWhenBack();
-      return { ok: true, waiting: true };
+      return { ok: true, waiting: true, waitsFor: "start" };
     }
     const labels = slot
       ? ["--label", `herdr.chat=${SP.chatLabel(rec.pane)}`, "--label", `herdr.chat.slot=${slot}`, "--label", `herdr.chat.origin=slot:${slot}`, "--label", "herdr.role=coordinator",
@@ -582,9 +585,12 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     // what the person asked, for its chat to show apart from the template (the window's data/chat-first)
     const first = join(appHome(), "data", "chat-first");
     const addr = sp.machine && !String(out.address).includes("/") ? `${sp.machine}/${out.address}` : String(out.address);
-    if (out.first_message?.sent === false) firstWhenIdle(hub, addr, [tpl.words, task].filter(Boolean).join("\n\n"));
+
     try { mkdirSync(first, { recursive: true }); writeFileSync(writable(join(first, `${String(slot ?? addr).replace(/[^\w.-]/g, "_")}.txt`)), text); } catch {}
-    return { ok: true, started: true };
+    if (out.first_message?.sent === false) return { ok: true, waiting: true, waitsFor: "start", retry: {
+      ...b, chat: undefined, addr, text: [tpl.words, task].filter(Boolean).join("\n\n"), attachments: [], waitForIdle: true,
+    } };
+    return { ok: true, started: true, at: Date.now() };
   }
   if (b?.type === "send" && typeof b.chat === "string") {
     // what it replies to (2.1 names the message by id) and the tasks it mentions, as the window's chat sends them
@@ -632,15 +638,12 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
   }
   switch (b?.type) {
     case "send": {
-      // one page's send asked again (its answer lost on the way, a reload, Retry): the same one, never twice
-      const cid = typeof b.cid === "string" && b.cid ? b.cid.slice(0, 80) : null;
-      if (!cid) return sendNow(hub, b, compat);
-      return once(cid, (again) => sendNow(hub, b, compat, again));
+      return sendNow(hub, b, compat, !!b.again);
     }
     case "steer": {
       // Send now on a message in Claude Code's own queue (#662): its Ctrl+Enter, only while its screen offers it
       const a = addr(b.addr), t = hub.terminals.get(a);
-      if (!t || t.state !== "live") throw new Error("That agent isn't running.");
+      if (!t || t.state !== "live") throw Object.assign(new Error("That agent isn't running."), { definite: true });
       const io = { hc: asPerson(hub), sleep: (ms: number) => Bun.sleep(ms), status: () => (hub.terminals.get(a) as any)?.status?.state ?? null };
       if (!(await steerNow(io, a))) throw new Error(WORDS.notNow);
       return { ok: true };

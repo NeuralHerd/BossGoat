@@ -27,7 +27,7 @@ import { windowSection, setWindow, offList, offPlugins } from "./window.ts";
 import { record, deleteAll, note as noteUsage, followSwitch, isOn as insightsOn, logLines } from "./usage.ts";
 import { insightsSummary } from "./voice-data.ts";
 import { Chats } from "./chats.ts";
-import { act, hc as hcRun } from "./actions.ts";
+import { recoverSends, act, hc as hcRun } from "./actions.ts";
 import { AgentWatch } from "./watch.ts";
 import { Compat, activity, newsKey, placeKey } from "./compat.ts";
 import { keep, served as fileResponse, smaller } from "./media.ts";
@@ -133,6 +133,7 @@ const model = new Model(hub, live);
 live.chats = new Chats(hub);
 live.compat = compat;
 compat.reader = (a) => live.chats?.reader(a) ?? null;
+setInterval(() => { if (hub.up) void recoverSends(hub, compat).catch((e) => console.error("Message recovery:", e.message)); }, 3000);
 // the chat scrolled to its top: the page before (as the window's loadEarlier)
 (compat as any).earlier = (a: string) => live.chats?.earlier(a);
 const push = new Push(() => (me ? webOrigin(me.dns, hp) : "https://herdr.dev"));
@@ -636,7 +637,7 @@ async function doAction(body: any): Promise<Response> {
     try { return json({ ok: true, text: settings.template(body.role, typeof body.text === "string" ? body.text : undefined) }); }
     catch (err) { return json({ ok: false, error: (err as Error).message }); }
   }
-  if (body?.type === "limits-check") { await machines.checkNow(); return json({ ok: true }); }
+  if (body?.type === "limits-check") { await machines.checkNow(body.force === true); return json({ ok: true }); }
   if (body?.type === "secrets-move") {
     // Settings › Secrets › Kept on: the vault moves (shepherdr secrets move-to); the page sees it as it goes
     const m = typeof body.machine === "string" && body.machine && body.machine !== home.me?.name ? body.machine : null;

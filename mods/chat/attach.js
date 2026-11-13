@@ -108,8 +108,20 @@ export async function deliver(files, addr, machine) {
 export function drop(f) {
   if (f.temp && f.path.startsWith(`${appHome()}/data/chat-attach/`)) exec("rm", ["-f", f.path]);
 }
-export function prune() {
-  exec("sh", ["-c", 'find "$1" -name "pasted-*" -mmin +1440 -delete 2>/dev/null; true', "x", `${appHome()}/data/chat-attach`]);
+export async function prune() {
+  const dir = `${appHome()}/data/chat-attach`, drafts = `${appHome()}/data/chat-drafts`;
+  const keep = new Set();
+  const paths = (value) => {
+    if (typeof value === "string" && value.startsWith(dir + "/")) keep.add(value);
+    else if (value && typeof value === "object") Object.values(value).forEach(paths);
+  };
+  try {
+    for (const name of await fs.readdir(drafts)) if (name.endsWith(".json")) paths(JSON.parse(await fs.readFile(`${drafts}/${name}`, "utf8")));
+    for (const name of await fs.readdir(dir)) {
+      const path = `${dir}/${name}`;
+      if (name.startsWith("pasted-") && !keep.has(path) && Date.now() - (await fs.stat(path)).mtimeMs > 86400000) await fs.unlink(path);
+    }
+  } catch {} // If a draft cannot be read, keep its attachments.
 }
 
 // Images shown in the chat (thumbnails, the viewer): `image()` loads from the app's folder, so

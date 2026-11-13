@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { argvFor, current, freshArgv, forkArgv, menuFor, parseDefaults, sessionOf } from "./agents.js";
 import { choicesFrom, chooseModel, modelLabel } from "./settings.js";
 import { kindOf } from "./chat-reader.js";
+import { receipt } from "./delivery.js";
 import { cliOf } from "./screens.js";
 import { FIND, LOG, Conversation, records, afterSend } from "./chat-log.js";
 
@@ -182,9 +183,9 @@ test("desktop Cursor delivery clears the pending bubble only after a new matchin
   const source = readFileSync(new URL("../mods/chat/main.js", import.meta.url), "utf8");
   const method = source.match(/\n  settlePending\(\) \{\n[\s\S]*?\n  \}/)[0];
   const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-  const settle = new Function("afterSend", "norm", "same", "ownWords", `return ({${method}}).settlePending`)(afterSend, norm, (a, b) => norm(a) === norm(b), () => []);
+  const settle = new Function("afterSend", "norm", "same", "ownWords", "receipt", `return ({${method}}).settlePending`)(afterSend, norm, (a, b) => norm(a) === norm(b), () => [], receipt);
   const conv = new Conversation("cursor"), text = `<timestamp>${stamp}</timestamp>\n<user_query>Continue</user_query>`;
-  const self = { conv, pending: [{ sent: "Continue", match: "Continue", cursorAfter: 100, at: Date.parse("2026-11-11T13:49:55Z") }] };
+  const self = { conv, saveDraft: async () => {}, pending: [{ sent: "Continue", match: "Continue", cursorAfter: 100, at: Date.parse("2026-11-11T13:49:55Z") }] };
   conv.feed([cursorUser(text, 10)]);
   settle.call(self);
   expect(self.pending).toHaveLength(1);

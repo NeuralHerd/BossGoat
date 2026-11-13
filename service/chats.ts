@@ -35,7 +35,7 @@ function readerFor(io: any, addr: string) {
  *  machine's always, and this machine's too on some herdr-core versions (#748). hc get has it, asked at most every
  *  10 s per terminal. */
 const fg = new Map<string, { at: number; foreground: any }>();
-async function withForeground(addr: string, t: any) {
+export async function withForeground(addr: string, t: any) {
   if (!t || t.foreground?.pid || t.state !== "live") return t;
   let c = fg.get(addr);
   if (!c || Date.now() - c.at > 10_000) {

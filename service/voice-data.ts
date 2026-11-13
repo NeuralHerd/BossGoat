@@ -45,6 +45,8 @@ export const NOT_DATA: Record<string, string> = {
   "api:push": "this device's own notification subscription (the notification settings are in the snapshot's settings)",
   "api:commands": "the / picker's command list above the message box",
   "api:reach": "the # picker's spaces above the message box (the same spaces as the snapshot's places)",
+  "action:assistant-health": "an on-demand check of one Assistant; look chat gives its current state",
+  "action:delivery-check": "checks one saved outgoing message against its conversation and records a receipt",
   "action:earlier": "a chat's older messages: look chat reads further back itself",
 };
 

@@ -98,7 +98,10 @@ export const noHealthWords = (s) => (s.error ? `Couldn't read it: ${s.error}` : 
 // The plan block, while there are no CLIs.
 export const noPlanWords = (s) => (s.limitsAt ? "No agent CLIs here." : "Reading plan usage…");
 // A CLI's heading: its name and plan ("Claude Code · Max").
-export const cliTitle = (r) => r.name + (r.read?.plan ? ` · ${r.read.plan[0].toUpperCase()}${r.read.plan.slice(1)}` : "");
+export const cliTitle = (r) => r.name + (r.read?.plan ? ` · ${r.read.plan.replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase())}` : "");
+export const usageRecovery = (read, name) => /sign.in|renewal|signed.out/i.test(`${read.failed ?? ""} ${read.why ?? ""} ${read.state}`)
+  ? `Open ${name} on this machine and complete sign-in if prompted. Then refresh usage.` : null;
+export const usageStamp = (read, now = Date.now()) => `${readOld(read, now) ? "Last known usage" : "Read"} ${ago(read.at, now)}`;
 // A read older than OLD, or one that failed since, shows amber.
 export const readOld = (read, now = Date.now()) => now - read.at > OLD || Boolean(read.failed);
 // One window of a plan: dead (refilled since it was read) says so; else its numbers and when it refills.
@@ -108,7 +111,7 @@ export function windowWords(w, now = Date.now()) {
   const refill = w.resets_at ? `Refills ${when(w.resets_at)} · in ${span(w.resets_at - now)}` : w.resets ? `Refills ${w.resets}` : "No refill time reported";
   return { name: w.name, pct, level: planLevelOf(pct), words: `${pct}% left · ${Math.round(w.used)}% used`, refill };
 }
-export const failedWords = (read) => `Last read failed: ${read.failed}`;
+export const failedWords = (read) => `Usage is stale. ${String(read.failed).replace(/: the next agent here will do it|; the next agent here will do it/gi, ".")}`;
 // A CLI with no numbers: why.
 export const whyWords = (read) =>
   read.state === "signed-out" ? "Not signed in on this machine." : read.state === "no-access" ? read.why ?? "" : read.state === "no-plan" ? "No plan limits: not signed in to a subscription." : `Unknown. ${read.why ?? ""}`;

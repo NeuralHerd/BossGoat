@@ -19,13 +19,13 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { exec, shared, setShared, appHome, home, machines, knownAgents, readTextFile } from "herdr";
-import { heading } from "./ui.js";
+import { heading, button } from "./ui.js";
 import { dirs } from "./dirs.js";
 // The meters, their levels and the start limits: core/machines.js, shared with the web app.
 // What they say (the details' words, plan rows) too: the web's machine popup reads the same.
 import { HOLD, ALERT, settingsKey, holdOf, nextRead, healthMeters, healthLevel, healthWords, planLevelOf, planRows, planLevel, span,
   meterSub, healthReadWords, noHealthWords, noPlanWords, cliTitle, readOld, windowWords, failedWords, whyWords, ago, NO_USAGE,
-  READING_MACHINE } from "./core/machines.js";
+  READING_MACHINE, usageRecovery, usageStamp } from "./core/machines.js";
 export { HOLD, ALERT, settingsKey, holdOf, healthMeters, healthLevel, healthWords, planLevelOf, planRows, planLevel, span };
 
 const KEY = "machines.stats";
@@ -137,7 +137,7 @@ function meterRow(t, id, name, pct, fill, level, words, sub) {
     .when(Boolean(sub), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(sub)));
 }
 
-function cliBlock(t, mid, r, now) {
+function cliBlock(t, mid, r, now, machine) {
   const head = (extra) => h_flex().gap(8).items_center()
     .child(div().flex_1().min_w(0).truncate().text_size(13).font_semibold().text_color(t.foreground)
       .child(cliTitle(r)))
@@ -145,8 +145,17 @@ function cliBlock(t, mid, r, now) {
   if (r.none) return v_flex().id(`${mid}-${r.cli}`).gap(4).child(head()).child(div().text_size(12).text_color(t.dim).child(NO_USAGE));
   const read = r.read;
   const old = readOld(read, now);
-  const box = v_flex().id(`${mid}-${r.cli}`).gap(8).child(v_flex().gap(2).child(head({ text: `Read ${ago(read.at, now)}`, old }))
+  const box = v_flex().id(`${mid}-${r.cli}`).gap(8).child(v_flex().gap(2).child(head({ text: usageStamp(read, now), old }))
     .when(Boolean(read.account), (el) => el.child(div().truncate().text_size(11.5).text_color(t.dim).child(read.account))));
+  const recovery = usageRecovery(read, r.name);
+  if (recovery) box.child(div().text_size(12).text_color(t.muted).child(recovery));
+  if (old || recovery || read.state !== "ok") {
+    const controls = h_flex().gap(8).child(button(`${mid}-${r.cli}-refresh`, "Refresh usage", { onClick: (_, cx) => cx.spawn(async (cx) => { await pollNow({ force: true, only: machine }); cx.notify(); }) }));
+    if (recovery && !machine && ["codex", "claude", "cursor"].includes(r.cli)) controls.child(button(`${mid}-${r.cli}-open`, `Open ${r.name}`, { onClick: (_, cx) => cx.spawn(async () => {
+      await exec("herdr-app", ["do", "tab.new", "--name", `${r.name} sign-in`, "--folder", home(), "--argv", JSON.stringify([r.cli === "cursor" ? "cursor-agent" : r.cli])]);
+    }) }));
+    box.child(controls);
+  }
   if (read.state === "ok") {
     return box.children(read.windows.map((w, i) => {
       const x = windowWords(w, now);
@@ -173,7 +182,7 @@ export function machineDetails(t, machine, opts = {}) {
   const rows = planRows(s, now);
   const planBox = v_flex().gap(14)
     .when(opts.titles !== false, (el) => el.child(heading("Plan usage")))
-    .children(rows.map((r) => cliBlock(t, mid, r, now)))
+    .children(rows.map((r) => cliBlock(t, mid, r, now, machine)))
     .when(!rows.length, (el) => el.child(div().text_size(12).text_color(t.dim).child(noPlanWords(s))));
   return out.when(opts.health !== false, (el) => el.child(healthBox))
     .when(opts.health !== false && opts.plan !== false, (el) => el.child(div().h(1).bg(t.border)))

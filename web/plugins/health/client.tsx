@@ -26,6 +26,8 @@ const core = MC as unknown as {
   healthReadWords: (s: MachineStats, now?: number) => string
   noHealthWords: (s: MachineStats) => string
   noPlanWords: (s: MachineStats) => string
+  usageStamp: (read: Read, now: number) => string
+  usageRecovery: (read: Read, name: string) => string | null
   cliTitle: (r: PlanRow) => string
   readOld: (read: Read, now?: number) => boolean
   windowWords: (w: NonNullable<Read['windows']>[number], now?: number) => WindowWords
@@ -138,11 +140,12 @@ function Cli({ r, now }: { r: PlanRow; now: number }) {
       <div className="flex flex-col gap-0.5">
         <div className="flex items-baseline gap-2">
           {title}
-          <span className={clsx('shrink-0 text-[0.75rem] tabular-nums phone:text-[0.8125rem]', core.readOld(read, now) ? 'text-work-fg' : 'text-fg3')}>Read {core.ago(read.at, now)}</span>
+          <span className={clsx('shrink-0 text-[0.75rem] tabular-nums phone:text-[0.8125rem]', core.readOld(read, now) ? 'text-work-fg' : 'text-fg3')}>{core.usageStamp(read, now)}</span>
         </div>
         {read.account ? <p className="truncate text-[0.75rem] text-fg3 phone:text-[0.8125rem]">{read.account}</p> : null}
       </div>
-      {read.state === 'ok' ? (
+      {core.usageRecovery(read, r.name) ? <p className="text-sm">{core.usageRecovery(read, r.name)}</p> : null}
+              {read.state === 'ok' ? (
         <>
           {(read.windows ?? []).map((w, i) => {
             const x = core.windowWords(w, now)

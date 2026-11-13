@@ -24,6 +24,8 @@ core/chat-log.js: chat
 core/chat-view.js: chat
 core/screens.js: chat
 core/send.js: chat
+core/delivery.js: chat
+core/assistant-health.js: chat
 core/person.js: chat shepherdr-settings tabs-tasks
 core/spaces.js: chat spaces-chat shepherdr-settings jump pane-chat tasks newspace coordinator menu-tasks new-menu-tasks tabs-tasks workspace-status-chat
 core/sidebar-icons.js: spaces-chat

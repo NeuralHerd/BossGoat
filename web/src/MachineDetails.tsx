@@ -2,6 +2,7 @@
 // machine blocks (mods/shepherdr-settings/machines-section.js, lib/machines.js machineDetails). The reads and every
 // word are the shared core's (core/machines.js), as the sidebar's machine popup has them.
 import clsx from 'clsx'
+import { act } from './kernel.ts'
 import { useEffect, useState, type CSSProperties } from 'react'
 import type { Machine, MachineStats } from '@shared/types.ts'
 import * as MC from '@core/machines.js'
@@ -17,6 +18,8 @@ const core = MC as unknown as {
   healthReadWords: (s: MachineStats, now?: number) => string
   noHealthWords: (s: MachineStats) => string
   noPlanWords: (s: MachineStats) => string
+  usageStamp: (read: Read, now: number) => string
+  usageRecovery: (read: Read, name: string) => string | null
   cliTitle: (r: PlanRow) => string
   readOld: (read: Read, now?: number) => boolean
   windowWords: (w: NonNullable<Read['windows']>[number], now?: number) => { dead?: string; name?: string; pct?: number; level?: Level; words?: string; refill?: string }
@@ -69,7 +72,7 @@ export function MachineDetails({ m }: { m?: Machine }) {
       </div>
       <div className="h-px shrink-0 bg-line" />
       <div className="flex flex-col gap-3.5">
-        <h4 className={clsx(small, 'font-medium text-fg2')}>Plan usage</h4>
+        <h4 className={clsx(small, 'font-medium text-fg2')}>Plan usage <button type="button" className="ml-3 underline" onClick={() => void act({ type: 'limits-check', force: true })}>Refresh usage</button></h4>
         {plans.map((r) => {
           const title = <h5 className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold phone:text-[0.9375rem]">{core.cliTitle(r)}</h5>
           if (r.none || !r.read) return <section key={r.cli} className="flex flex-col gap-1">{title}<p className={clsx(small, 'text-fg3')}>{core.NO_USAGE}</p></section>
@@ -79,10 +82,11 @@ export function MachineDetails({ m }: { m?: Machine }) {
               <div className="flex flex-col gap-0.5">
                 <div className="flex items-baseline gap-2">
                   {title}
-                  <span className={clsx(small, 'shrink-0 tabular-nums', core.readOld(read, now) ? 'text-work-fg' : 'text-fg3')}>Read {core.ago(read.at, now)}</span>
+                  <span className={clsx(small, 'shrink-0 tabular-nums', core.readOld(read, now) ? 'text-work-fg' : 'text-fg3')}>{core.usageStamp(read, now)}</span>
                 </div>
                 {read.account ? <p className={clsx(small, 'truncate text-fg3')}>{read.account}</p> : null}
               </div>
+              {core.usageRecovery(read, r.name) ? <p className="text-sm">{core.usageRecovery(read, r.name)}</p> : null}
               {read.state === 'ok' ? (
                 <>
                   {(read.windows ?? []).map((w, i) => {

@@ -3,11 +3,12 @@
 // or is starting does it wait, and the bubble says why.
 import clsx from 'clsx'
 import * as SL from '@core/slash.js'
+import { HEALTH_COLORS } from '@core/assistant-health.js'
 const { typing: slashTyping, match: slashMatch } = SL as any
 import { openAccept } from '@client/screens/Accept.tsx'
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ComponentType, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from 'react'
 import { act, chatName, definePlugin, getDraft, getState, goChat, has, holdReload, openArtifact, openItem, openNeeds, openTask, registry, setDraft, setOutbox, setUI, taskOf, useDraft, useSnap, useStore, useUI, type UI } from '@client/kernel.ts'
-import { anchorOf, keyOf, partsOf, placesOf, priorOf, reasonOf, SEND_TIMEOUT, type Outgoing } from '@client/outbox.ts'
+import { anchorOf, keyOf, partsOf, placesOf, priorOf, reasonOf, SEND_TIMEOUT, saveOutbox, type Outgoing } from '@client/outbox.ts'
 import { dropFiles, keepFile, keptFile, postFile, retrying, sweepFiles } from '@client/uploads.ts'
 import { AlertIcon, BackIcon, CameraIcon, CheckIcon, CopyIcon, Count, DeleteIcon, dimmed, Dot, DownIcon, DownloadIcon, Empty, field, FileIcon, ic, IconButton, KeyIcon, LinkButton, LiveWave, MachineIcon, Menu, MenuItem, MenuSeparator, MenuSetting, MicIcon, ModeIcon, MoreIcon, NextIcon, PageIcon, PlanIcon, PlusIcon, Primary, QuestionIcon, ReplyIcon, RestartIcon, roundBtn, SearchIcon, SecretField, Sent, SmileIcon, Tab, Tabs, TextBox, UpIcon, useElapsed, XIcon } from '@client/ui.tsx'
 import { canDictate, dictate, dictSample, type Dictation } from '@client/dictation.ts'
@@ -248,7 +249,7 @@ function Held({ chatKey }: { chatKey: string }) {
   for (const o of outbox) if (o.chat === chatKey && heldOut(o) && !rows.has(o.cid)) rows.set(o.cid, { cid: o.cid, text: o.text, files: o.files.map((f) => f.name) })
   if (!rows.size) return null
   const ghost = 'flex h-[22px] shrink-0 items-center rounded-[6px] px-2 text-[0.75rem] font-medium text-fg2 hover:bg-hover hover:text-fg phone:h-9'
-  const take = (cid: string, then?: () => void) => void act({ type: 'held-drop', cid } as never).then(() => { removeOut(cid); then?.() }, () => { removeOut(cid); then?.() })
+  const take = (cid: string, then?: () => void) => void removeOut(cid).then((removed) => { if (removed) then?.() })
   return (
     <div className="flex flex-col gap-1">
       {[...rows.values()].map((r) => (
@@ -288,7 +289,7 @@ function InQueue({ chatKey }: { chatKey: string }) {
  *  starting, a CLI command mid-turn or a machine out of reach hold it */
 function waitLine(why: Message['waitsFor']) {
   if (why === 'menu') return 'Waiting for your answer above.'
-  if (why === 'start') return 'Goes in once the agent has started'
+  if (why === 'start') return 'Waiting for the agent to start. Your message is saved.'
   if (why === 'turn') return 'Goes in once the agent finishes this step'
   if (why === 'queue') return WORDS.inQueue
   return 'Goes in once it can be reached'
@@ -301,7 +302,7 @@ function NotSent({ out, className }: { out: Outgoing; className?: string }) {
   return (
     <div role="alert" className={clsx('mt-1 flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5 text-[0.75rem] phone:text-[0.8125rem]', out.lost ? 'text-fg2' : 'text-need', className)}>
       {out.lost ? (
-        <span>Not delivered</span>
+        <span>Delivery unconfirmed</span>
       ) : (
         <span className="flex items-center gap-1.5">
           <AlertIcon className="size-3.5 shrink-0" />
@@ -309,9 +310,10 @@ function NotSent({ out, className }: { out: Outgoing; className?: string }) {
         </span>
       )}
       <span className="flex items-center gap-1.5 whitespace-nowrap">
-        <button type="button" className={btn} onClick={() => retry(out.cid)}>
-          Retry
+        <button type="button" className={btn} disabled={out.checking} onClick={() => out.lost ? void checkOut(out.cid) : void retry(out.cid)}>
+          {out.checking ? 'Checking…' : out.lost ? 'Check delivery' : 'Retry'}
         </button>
+        {out.lost && out.checked ? <button type="button" className={btn} onClick={() => void retry(out.cid, true)}>Send again (may duplicate)</button> : null}
         <span aria-hidden="true" className="text-fg3">·</span>
         <button type="button" className={btn} onClick={() => removeOut(out.cid)}>
           Remove
@@ -346,11 +348,22 @@ function Sending({ out, className }: { out: Outgoing; className?: string }) {
 }
 
 /** take one you sent out of the chat, its words and files with it */
-const removeOut = (cid: string) => setOutbox((all) => {
-  const o = all.find((x) => x.cid === cid)
-  if (o) void dropFiles(o.files.map((f) => f.path).filter(isStandIn))
-  return all.filter((x) => x.cid !== cid)
-})
+async function removeOut(cid: string, confirmed = false) {
+  const o = getState().outbox.find((x) => x.cid === cid)
+  if (!o) return true
+  if (o.waiting && !confirmed) {
+    try {
+      const r = await act({ type: 'held-drop', cid } as never) as { ok?: boolean; error?: string }
+      if (!r.ok) throw new Error(r.error || 'Delivery already started. Check delivery before removing it.')
+    } catch (e) {
+      setOutbox((all) => all.map((x) => x.cid === cid ? { ...x, error: reasonOf(e), state: 'failed' } : x))
+      return false
+    }
+  }
+  void dropFiles(o.files.map((f) => f.path).filter(isStandIn))
+  setOutbox((all) => all.filter((x) => x.cid !== cid))
+  return true
+}
 
 /** a hold on one still on its way (or ⋯ beside it, with a mouse): Remove takes it out, should it never come back. It
  *  opens above it: what is on its way is always at the end of the chat, over the box */
@@ -1827,10 +1840,12 @@ async function deliver(cid: string) {
     if (standIns.length) patch(() => ({ files, up: undefined }))
     // a reload now would cut it off on its way
     const release = holdReload()
-    let r: { waiting?: boolean; waitsFor?: Outgoing['waitsFor']; at?: number }
+    let r: { unconfirmed?: boolean; waiting?: boolean; waitsFor?: Outgoing['waitsFor']; at?: number }
     try {
+      patch(() => ({ attempted: true }))
+      saveOutbox(getState().outbox, true)
       r = (await retrying(
-        () => act({ type: 'send', chat: o.chat, text: o.text, attachments: files.map((f) => f.path), cid, reply: o.reply?.id, human: true, ...(o.hold ? { hold: true } : {}) } as never, AbortSignal.timeout(SEND_TIMEOUT)),
+        () => act({ type: 'send', chat: o.chat, text: o.text, attachments: files.map((f) => f.path), cid, prior: o.prior, reply: o.reply?.id, human: true, ...(o.hold ? { hold: true } : {}) } as never, AbortSignal.timeout(SEND_TIMEOUT)),
         since,
         { onWait },
       )) as typeof r
@@ -1839,10 +1854,10 @@ async function deliver(cid: string) {
     }
     // the chat may already show it waiting (queued) or gone in: that knows better than the answer
     const serverAt = typeof r?.at === 'number' ? r.at : undefined
-    patch((x) => ({ state: 'sent', error: undefined, offline: undefined, up: undefined, serverAt, ...(x.queued || x.wentAt ? {} : { waiting: r?.waiting || undefined, waitsFor: (r?.waiting && r.waitsFor) || undefined }) }))
+    patch((x) => ({ state: r?.unconfirmed ? 'failed' : 'sent', lost: r?.unconfirmed, error: undefined, offline: undefined, up: undefined, serverAt, ...(x.queued || x.wentAt ? {} : { waiting: r?.waiting || undefined, waitsFor: (r?.waiting && r.waitsFor) || undefined }) }))
     void dropFiles(standIns)
   } catch (e) {
-    patch(() => ({ state: 'failed', error: reasonOf(e), offline: undefined, up: undefined }))
+    patch((x) => ({ state: 'failed', lost: x.attempted, error: reasonOf(e), offline: undefined, up: undefined }))
   } finally {
     delivering.delete(cid)
     gates.delete(cid)
@@ -1855,11 +1870,33 @@ const newCid = () => `${Date.now().toString(36)}-${Math.random().toString(36).sl
 
 /** send again what didn't go through; it moves down to the end, like a new message. One that went in but never showed
  *  goes as a new message (its old id is spent: the server would take it as sent already). */
-function retry(cid: string) {
+async function checkOut(cid: string) {
+  const o = getState().outbox.find((x) => x.cid === cid)
+  if (!o || o.checking) return false
+  const patch = (p: Partial<Outgoing>) => setOutbox((all) => all.map((x) => x.cid === cid ? { ...x, ...p } : x))
+  patch({ checking: true })
+  try {
+    const r = await act({ type: 'delivery-check', chat: o.chat, cid, text: o.text, at: o.serverAt ?? o.at, prior: o.prior } as never) as { delivered?: boolean; waiting?: boolean; unconfirmed?: boolean; retryable?: boolean; at?: number }
+    if (r.delivered) { await removeOut(cid, true); return true }
+    patch({ checked: true, lost: !r.retryable, state: r.waiting ? 'sent' : 'failed', waiting: r.waiting,
+      ...(r.at ? { serverAt: r.at } : {}), error: r.waiting ? undefined : 'No matching message found in the conversation.' })
+  } catch (e) { patch({ error: reasonOf(e), checked: false }) }
+  finally { patch({ checking: false }) }
+  return false
+}
+
+async function retry(cid: string, resend = false) {
+  const before = getState().outbox.find((x) => x.cid === cid)
+  if (!before || before.checking) return
+  if (before.attempted || before.lost) {
+    if (await checkOut(cid)) return
+    const checked = getState().outbox.find((x) => x.cid === cid)
+    if (!checked?.checked || checked.waiting || (checked.lost && !resend)) return
+  }
   const s = getState()
   const o = s.outbox.find((x) => x.cid === cid)
   if (!o) return
-  const again: Outgoing = { ...o, cid: o.lost ? newCid() : o.cid, state: 'sending', error: undefined, lost: undefined, waiting: undefined, waitsFor: undefined, queued: undefined, serverAt: undefined, wentAt: undefined, busyAt: undefined, pastAt: undefined, offline: undefined, up: undefined, at: Date.now(), prior: priorOf(s.chats[o.chat]), after: anchorOf(s.chats[o.chat]), before: s.outbox.filter((x) => x.chat === o.chat && x.cid !== cid).map((x) => x.cid) }
+  const again: Outgoing = { ...o, attempted: false, checked: false, checking: false, cid: o.lost ? newCid() : o.cid, state: 'sending', error: undefined, lost: undefined, waiting: undefined, waitsFor: undefined, queued: undefined, serverAt: undefined, wentAt: undefined, busyAt: undefined, pastAt: undefined, offline: undefined, up: undefined, at: Date.now(), prior: priorOf(s.chats[o.chat]), after: anchorOf(s.chats[o.chat]), before: s.outbox.filter((x) => x.chat === o.chat && x.cid !== cid).map((x) => x.cid) }
   setOutbox((all) => all.map((x) => (x.cid === cid ? again : x)))
   void deliver(again.cid)
 }
@@ -2419,7 +2456,7 @@ async function attach(chatKey: string, list: File[]) {
 /** a page opened again: what was still sending goes on (its pictures from the device), and the device lets go of
  *  files kept over a day */
 async function resume() {
-  void sweepFiles()
+  void sweepFiles(Date.now(), getState().outbox.flatMap((o) => o.files.map((f) => f.path)))
   for (const o of getState().outbox) {
     for (const f of o.files) {
       if (!isStandIn(f.path) || previews.has(f.path) || !isImage(f.name)) continue
@@ -2427,9 +2464,13 @@ async function resume() {
       if (kept) previews.set(f.path, URL.createObjectURL(kept))
     }
     if (o.state === 'sending') void deliver(o.cid)
+    else if (o.waiting) void checkOut(o.cid)
   }
 }
-if (typeof window !== 'undefined') setTimeout(() => void resume(), 0)
+if (typeof window !== 'undefined') {
+  setTimeout(() => void resume(), 0)
+  setInterval(() => { for (const o of getState().outbox) if (o.waiting && !o.checking) void checkOut(o.cid) }, 5000)
+}
 
 
 /** the + menu, and the device's file pickers it opens: they stay once the menu has closed, to hear what was picked */
@@ -2910,6 +2951,31 @@ function Ended({ chatKey }: { chatKey: string }) {
   )
 }
 
+function AssistantHealth({ chatKey }: { chatKey: string }) {
+  const chat = useChat(chatKey)
+  const [health, setHealth] = useState<{ rows: { label: string; text: string }[]; detail: string; action: string } | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const check = async () => {
+    setBusy(true)
+    try { setHealth(await act({ type: 'assistant-health', chat: chatKey, agent: chat?.agent?.kind, since: getState().outbox.find((o) => o.chat === chatKey)?.at } as never) as typeof health); setError('') }
+    catch (e) { setError(reasonOf(e)) }
+    finally { setBusy(false) }
+  }
+  useEffect(() => { setHealth(null) }, [chatKey])
+  return <details open={chat?.notice ? true : undefined} className="mx-4 my-2 shrink-0 rounded-lg border p-3 text-sm" style={{ colorScheme: 'light', background: HEALTH_COLORS.background, color: HEALTH_COLORS.ink, borderColor: HEALTH_COLORS.border }} onToggle={(e) => { if (e.currentTarget.open && !health && !busy) void check() }}>
+    <summary className="cursor-pointer font-medium">Assistant health</summary>
+    {health?.rows.map((r) => <p key={r.label} className="mt-1">{r.label}: {r.text}</p>)}
+    {health?.detail ? <p className="mt-2">{health.detail}</p> : null}
+    {error ? <p role="alert">{error}</p> : null}
+    <div className="mt-2 flex gap-4" style={{ color: HEALTH_COLORS.link }}>
+      <button type="button" disabled={busy} onClick={() => void check()}>{busy ? 'Checking…' : 'Check again'}</button>
+      {health?.action === 'choose' ? <button type="button" onClick={() => openRestart(chatKey, 'Assistant', true)}>Choose agent</button> : null}
+      {health?.action === 'terminal' ? <button type="button" onClick={() => openTerminal(chatKey)}>Open agent screen</button> : null}
+    </div>
+  </details>
+}
+
 function ChatView({ chatKey, placeholder, unreachable }: { chatKey: string; placeholder: string; unreachable?: string }) {
   const from = useStore((s) => chatName(s.snap!, chatKey))
   const chat = useChat(chatKey)
@@ -2919,9 +2985,10 @@ function ChatView({ chatKey, placeholder, unreachable }: { chatKey: string; plac
   // the window's notice instead of the conversation (opening, not a chat agent, not found, ended); a chat not heard
   // from yet is opening (a space's empty Assistant chat is its own state: no agent yet)
   const shown = chat?.notice ? chat : !chat && !chatKey.startsWith('p:') ? ({ key: chatKey, cli: '', messages: [], notice: 'opening' } as Chat) : null
-  if (shown) return <div className="flex min-h-0 flex-1 flex-col"><Notice chat={shown} resume={() => act({ type: 'task-resume', chat: chatKey } as never)} /></div>
+  if (shown) return <div className="flex min-h-0 flex-1 flex-col"><AssistantHealth chatKey={chatKey} /><Notice chat={shown} resume={() => act({ type: 'task-resume', chat: chatKey } as never)} /></div>
   return (
     <DropFiles chatKey={chatKey}>
+      <AssistantHealth chatKey={chatKey} />
       <FindBar chatKey={chatKey} />
       <StickToBottom key={chatKey} chatKey={chatKey}>
         {unreachable ? (

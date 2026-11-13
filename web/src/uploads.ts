@@ -146,13 +146,13 @@ export async function keptFile(id: string): Promise<File | undefined> {
 export const dropFiles = (ids: string[]) => (ids.length ? tx('readwrite', (s) => void ids.forEach((id) => s.delete(id))) : Promise.resolve(undefined))
 
 /** older than a day: let go */
-export async function sweepFiles(now = Date.now()) {
+export async function sweepFiles(now = Date.now(), keep: string[] = []) {
   await tx('readwrite', (s) => {
     const c = s.openCursor()
     c.onsuccess = () => {
       const cur = c.result
       if (!cur) return
-      if (now - ((cur.value as { at?: number })?.at ?? 0) > KEEP) cur.delete()
+      if (!keep.includes(String(cur.key)) && now - ((cur.value as { at?: number })?.at ?? 0) > KEEP) cur.delete()
       cur.continue()
     }
   })

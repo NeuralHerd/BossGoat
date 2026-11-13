@@ -1,63 +1,71 @@
 // A page's send, once (SHEP-93): a phone that lost the answer asks again with the same id, and gets the same answer.
-// What went in is kept on disk an hour (a service restart between the send and the page asking again must not send it
-// twice); one that stayed in Claude Code's box is remembered so sending it again only presses its Enter; one held for
-// the agent's turn that then couldn't go is told to the page (Chat.failed), never dropped quietly.
-import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
-import { join } from "node:path";
+// Waiting messages and in-flight attempts are journaled before dispatch. After a restart only waiting messages
+// replay; an in-flight attempt needs a conversation receipt or an explicit resend decision.
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { DATA } from "./paths.ts";
 
-const KEEP = 60 * 60_000;
+const KEEP = 30 * 24 * 60 * 60_000;
 const FILE = () => join(process.env.SHEPHERDR_DATA || DATA, "sent.json");
-
-type Done = { at: number; result: unknown };
+type Done = { at: number; result?: any; state?: "sending" | "waiting" | "done" | "failed"; request?: any; stuck?: boolean; receipt?: { address: string; id: string } };
 let done: Map<string, Done> | null = null;
-
 function load(): Map<string, Done> {
   if (done) return done;
-  done = new Map();
-  try {
-    if (existsSync(FILE())) for (const [k, v] of Object.entries(JSON.parse(readFileSync(FILE(), "utf8")) as Record<string, Done>)) if (Date.now() - v.at < KEEP) done.set(k, v);
-  } catch {}
+  const loaded = new Map<string, Done>();
+  if (existsSync(FILE())) {
+    const parsed = JSON.parse(readFileSync(FILE(), "utf8")) as Record<string, Done>;
+    for (const [k, v] of Object.entries(parsed)) if (v.state !== "done" || Date.now() - v.at < KEEP) loaded.set(k, v);
+  }
+  done = loaded;
   return done;
 }
-
 function save() {
-  try {
-    const tmp = `${FILE()}.tmp`;
-    writeFileSync(tmp, JSON.stringify(Object.fromEntries([...load()].filter(([, v]) => !(v.result as { waiting?: boolean })?.waiting))), { mode: 0o600 });
-    renameSync(tmp, FILE());
-  } catch {}
+  mkdirSync(dirname(FILE()), { recursive: true });
+  const tmp = `${FILE()}.tmp`;
+  writeFileSync(tmp, JSON.stringify(Object.fromEntries(load())), { mode: 0o600 });
+  renameSync(tmp, FILE());
 }
-
-/** sends on their way now, by the page's id */
 const going = new Map<string, Promise<unknown>>();
-/** ids whose message stayed in Claude Code's box: sent again, it gets Enter (core/send.js sendTyped again) */
 const stuck = new Set<string>();
-
-/** go() once per cid: asked again while on its way, the same answer; once it went in, its answer again (kept across
- *  a restart); one that failed may go again. go(again): its last try stayed in the box */
-export function once(cid: string, go: (again: boolean) => Promise<unknown>): Promise<unknown> {
-  const d = load();
-  for (const [k, v] of d) if (Date.now() - v.at > KEEP) d.delete(k);
-  const was = d.get(cid);
-  if (was) return Promise.resolve(was.result);
+export function waitingSends(): { cid: string; at: number; request: any }[] {
+  return [...load()].filter(([, d]) => d.state === "waiting" && d.request).map(([cid, d]) => ({ cid, at: d.at, request: d.request })).sort((a, b) => a.at - b.at);
+}
+export function cancelWaiting(cid: string) {
+  if (load().get(cid)?.state !== "waiting") return false;
+  load().delete(cid); save(); return true;
+}
+export function sendReceipt(cid: string) { return load().get(cid) ?? null; }
+export function confirmedReceipts(address: string, except: string) {
+  return new Set([...load()].filter(([cid, d]) => cid !== except && d.receipt?.address === address).map(([, d]) => d.receipt!.id));
+}
+export function confirmSend(cid: string, receipt?: { address: string; id: string }) {
+  const was = load().get(cid);
+  if (was) { load().set(cid, { ...was, state: "done", result: { ok: true, at: was.at }, receipt }); save(); }
+}
+/** Save before any transport side effect. A crash while sending is ambiguous and cannot silently replay. */
+export function once(cid: string, go: (again: boolean) => Promise<unknown>, options: { request?: any; resume?: boolean } = {}): Promise<unknown> {
   const on = going.get(cid);
   if (on) return on;
-  const p = go(stuck.has(cid));
+  const d = load(), was = d.get(cid);
+  if (was?.state === "sending") return Promise.resolve({ ok: true, unconfirmed: true, at: was.at });
+  if (was?.result && was.state !== "failed" && !(was.state === "waiting" && options.resume)) return Promise.resolve(was.result);
+  const at = was?.at ?? Date.now();
+  d.set(cid, { at, state: "sending", request: options.request ?? was?.request, stuck: was?.stuck });
+  try { save(); } catch (e) { if (was) d.set(cid, was); else d.delete(cid); return Promise.reject(new Error("Couldn't save the message. Check disk space before trying again.")); }
+  const p = Promise.resolve().then(() => go(stuck.has(cid) || !!was?.stuck)).then((raw: any) => {
+    const { retry, ...result } = raw ?? {};
+    d.set(cid, { at, state: result.waiting ? "waiting" : "done", result, request: retry ?? options.request ?? was?.request });
+    save();
+    stuck.delete(cid);
+    return result;
+  }, (e) => {
+    if (e.stuck) stuck.add(cid);
+    // A known refusal can be retried. An interrupted/unanswered transport stays ambiguous.
+    d.set(cid, { at, state: e.definite || e.stuck ? "failed" : "sending", request: options.request ?? was?.request, stuck: !!e.stuck });
+    save();
+    throw e;
+  }).finally(() => going.delete(cid));
   going.set(cid, p);
-  p.then(
-    (result) => {
-      going.delete(cid);
-      stuck.delete(cid);
-      d.set(cid, { at: Date.now(), result });
-      // one held for the agent's turn is held in memory only: after a restart it is gone, so its Retry must go again
-      if (!(result as { waiting?: boolean })?.waiting) save();
-    },
-    (e) => {
-      going.delete(cid);
-      if ((e as { stuck?: boolean })?.stuck) stuck.add(cid);
-    },
-  );
   return p;
 }
 

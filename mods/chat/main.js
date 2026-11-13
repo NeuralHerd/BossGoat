@@ -38,6 +38,8 @@ import { WORDS, clock, bgGroups, subagentsOf, subagentWord, senderName, briefLab
 // Sending the person's words, as the web app does (core/send.js).
 import { refusal, taskTag, messageBody, replyInstead, steerNow, reactionLine, mentionedIn, sendTyped, SETTLE } from "./core/send.js";
 // hc whose send goes as the person, with no caller: never "Another agent" on another machine (SHEP-3, core/person.js).
+import { receipt, restorePending, UNCONFIRMED } from "./core/delivery.js";
+import { assistantHealth, HEALTH_COLORS, HEALTH_PROBE, healthProbe } from "./core/assistant-health.js";
 import { asPerson } from "./core/person.js";
 import { AskCards, linkCtl } from "./cards.js";
 import * as strips from "./strips.js";
@@ -286,6 +288,7 @@ export default class Chat extends View {
     if (!this.addr && this.role && this.slot) this.addr = this.slotAgent();
     this.machine = this.addr?.includes("/") ? this.addr.split("/")[0] : null;
     this.phase = "finding";
+    this.healthSince = Date.now();
     this.conv = null;
     this.path = null;
     this.reset();
@@ -507,8 +510,9 @@ export default class Chat extends View {
     if (!this.addr && this.role) this.phase = "fresh";
     if (this.phase === "fresh") this.loadChoice(cx);
     this.loadFirst(cx, labels);
-    if (this.addr || this.role) cx.spawn(async (cx) => { await this.loadDraft(cx); attach.prune(); });
-    if (this.addr) cx.spawn(async (cx) => this.follow(cx));
+    this.draftReady = this.loadDraft(cx);
+    cx.spawn(async (cx) => { await this.draftReady; attach.prune(); if (this.addr) await this.follow(cx); });
+    cx.spawn(async (cx) => this.checkHealth(cx));
     // A Coordinator tab's chat that missed its agent (started, or Herdr restarted, before this
     // copy saw it) takes the slot's live agent as soon as one shows, instead of staying empty.
     if (this.slot && !this.thread) cx.timer.every(2000, (cx) => this.adoptSlot(cx));
@@ -609,6 +613,8 @@ export default class Chat extends View {
   // on the web's cards: its terminal shows its own prompt meanwhile. A call or a recording ends with it.
   async close(cx) {
     if (this.host) return this.host.close(cx);
+    await this.draftReady;
+    await this.saveDraft();
     this.box.release();
     this.findBox.release();
     this.scroll.release();
@@ -621,14 +627,26 @@ export default class Chat extends View {
   // ---- drafts -----------------------------------------------------------------------------
 
   async loadDraft(cx) {
-    const text = await fs.readFile(this.draftFile, "utf8").catch(() => null);
     let d = null;
-    try { d = JSON.parse(text ?? "null"); } catch {}
+    try {
+      const text = await fs.readFile(this.draftFile, "utf8");
+      d = JSON.parse(text);
+      if (d?.pending && !Array.isArray(d.pending)) throw new Error("Invalid saved messages");
+      this.draftLoadError = null;
+    } catch (e) {
+      if (e.code !== "ENOENT") this.error = this.draftLoadError = "Couldn't read saved messages. Check file access before sending again.";
+      return;
+    }
     if (!d) return;
     if (d.text && !this.box.value()) this.box.set_value(d.text);
     this.files = Array.isArray(d.files) ? d.files : [];
     this.quote = d.quote ?? null;
-    this.queue = Array.isArray(d.queue) ? d.queue : [];
+    this.queue = [...(Array.isArray(d.queue) ? d.queue : []), ...this.queue];
+    this.queueRestored = Boolean(d.queue?.length);
+    const current = new Set(this.pending.map((p) => p.id));
+    this.pending = [...restorePending(d.pending).filter((p) => !current.has(p.id)), ...this.pending];
+    this.firstSend = d.firstSend ?? null;
+    this.firstTask = d.firstTask ?? this.firstTask;
     cx.notify();
   }
 
@@ -637,15 +655,24 @@ export default class Chat extends View {
     cx.timer.after(400, (cx) => { if (Date.now() - this.saveAt >= 380) cx.spawn(async () => this.saveDraft()); });
   }
 
-  async saveDraft() {
-    const d = { text: this.box.value(), files: this.files, quote: this.quote, queue: this.queue };
+  async saveDraft(strict = false) {
+    await this.draftReady;
+    if (this.draftLoadError) { if (strict) throw new Error(this.draftLoadError); return; }
+    const d = { text: this.box.value(), files: this.files, quote: this.quote, queue: this.queue,
+      pending: this.pending, firstSend: this.firstSend ?? null, firstTask: this.firstTask ?? null };
     this.markTyping(!!(d.text.trim() || d.files.length || d.quote));
-    const empty = !d.text.trim() && !d.files.length && !d.quote && !d.queue.length;
-    try {
-      if (empty) { if (await fs.exists(this.draftFile)) await fs.unlink(this.draftFile); return; }
+    const text = JSON.stringify(d), file = this.draftFile;
+    const write = async () => {
       await fs.mkdir(`${appHome()}/data/chat-drafts`, { recursive: true });
-      await fs.writeFile(this.draftFile, JSON.stringify(d));
-    } catch {}
+      await fs.writeFile(`${file}.tmp`, text, { mode: 0o600 });
+      await fs.rename(`${file}.tmp`, file);
+    };
+    const saved = (this.savingDraft ?? Promise.resolve()).catch(() => {}).then(write);
+    this.savingDraft = saved;
+    try { await saved; } catch (e) {
+      this.error = "Couldn't save your message. Check available disk space and try again.";
+      if (strict) throw new Error(this.error);
+    }
   }
 
   // While the box holds unsent words, its agent's terminal says so (herdr.typing=<ms>, again each
@@ -1223,13 +1250,17 @@ export default class Chat extends View {
     // theirs, as sent from here (core/chat-view.js ownWords).
     for (const u of users) if (this.own?.has(u.id)) delete u.from;
     if (!this.pending?.length) return;
-    const matches = (u, p) => afterSend(u, p) &&
-      (same(u.text, p.sent) || (p.match && norm(u.text).includes(p.match)) || (!p.match && u.images));
-    for (const id of ownWords(users, this.pending, matches)) {
-      (this.own ??= new Set()).add(id);
-      delete users.find((u) => u.id === id).from;
-    }
-    this.pending = this.pending.filter((p) => !users.some((u) => matches(u, p)));
+    const remaining = [...users];
+    const before = this.pending.length;
+    this.pending = this.pending.filter((p) => {
+      const found = receipt(remaining, p);
+      if (!found) return true;
+      (this.own ??= new Set()).add(found.id);
+      delete found.from;
+      remaining.splice(remaining.indexOf(found), 1);
+      return false;
+    });
+    if (before !== this.pending.length) void this.saveDraft();
   }
 
   // The newest page first; after that, what the log gained since.
@@ -1344,9 +1375,10 @@ export default class Chat extends View {
             const why = lost.length ? await this.endedWhy(this.addr) : "";
             this.addr = null; this.path = null; this.reset(); this.phase = "fresh";
             if (lost.length) {
-              this.pending = this.pending.filter((p) => !lost.includes(p));
-              if (!this.box.value().trim()) this.box.set_value(lost.map((p) => p.msg?.text ?? p.text).filter(Boolean).join("\n\n"));
-              toast({ title: `The ${this.role === "coordinator" ? "Assistant" : this.role} ended before it started`, body: `${why || "It exited before it was ready."} Your message is back in the box.`, level: "error" });
+              this.pending = lost.map((p) => ({ ...p, late: !!p.attempted, failed: why || "The agent stopped before it was ready." }));
+              this.error = why || "The agent stopped before it was ready.";
+              await this.saveDraft();
+              toast({ title: `The ${this.role === "coordinator" ? "Assistant" : this.role} ended before it started`, body: `${why || "It exited before it was ready."} Your message and attachments are saved.`, level: "error" });
             }
             cx.notify();
             return;
@@ -1361,14 +1393,18 @@ export default class Chat extends View {
         const k = this.ownTerminal();
         if (k && (starting(k) || openCard(this.addr))) { await this.screens.tick(this.addr, k); cx.notify(); }
         // The first message hc couldn't hand over (startAgent): once the agent is idle with no screen to answer.
-        if (this.firstSend && k?.turn > 0) this.firstSend = null;
+        if (this.firstSend && k?.turn > 0) { this.firstSend = null; for (const p of this.pending) if (p.first) p.late = true; await this.saveDraft(); }
         if (this.firstSend && k?.status?.state === "idle" && !openCard(this.addr)) {
           const text = this.firstSend;
           this.firstSend = null;
+          for (const p of this.pending) if (p.first) p.attempted = true;
+          await this.saveDraft(true);
           const sent = await personHc(["send", this.addr, text]).catch(() => null);
-          if (sent?.code !== 0) this.firstSend = text;
+          if (sent?.code !== 0) for (const p of this.pending) if (p.first) p.late = true;
+          await this.saveDraft();
         }
         this.alerts(cx);
+        this.recoverPending(cx);
         this.drainQueue(cx);
         // Dragged to the top with the scrollbar: no wheel said so.
         if (this.start && (this.range?.start ?? 9) <= 1) this.loadEarlier(cx);
@@ -1401,7 +1437,7 @@ export default class Chat extends View {
     this.pickedTasks = [];
     // Also while the agent asks in its terminal: the words answer it there (deliver()).
     if (!text && !this.files.length) return;
-    const msg = { id: `m${Date.now()}`, text, files: this.files, quote: this.quote };
+    const msg = { id: `m${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, files: this.files, quote: this.quote };
     this.box.set_value("");
     // If the textarea still adds Enter's new line after this, take it out again.
     cx.timer.after(30, () => { if (!this.box.value().trim()) this.box.set_value(""); });
@@ -1413,7 +1449,7 @@ export default class Chat extends View {
     const mm = !msg.files.length && /^\/model(?:\s+(\S+))?\s*$/i.exec(text);
     if (mm) { this.quote = msg.quote; this.modelCommand(mm[1] ?? null, cx); this.saveSoon(cx); cx.notify(); return; }
     note("send", { n: msg.files.length });
-    if (hold && this.status() === "working") this.queue.push(msg);
+    if (hold && this.status() === "working") { this.queue.push(msg); void this.saveDraft(); }
     else this.deliver(msg, cx);
     this.saveSoon(cx);
     this.pinned = true;
@@ -1441,20 +1477,20 @@ export default class Chat extends View {
     const st = this.status();
     if (st === "working" || st === "blocked" || this.asks.length || openCard(this.addr) || this.pending.some((p) => !p.failed && !p.late)) return;
     const msg = this.queue.shift();
-    if (msg.raw) personHc(["send", this.addr, msg.text]);
-    else this.deliver(msg, cx);
+    this.deliver({ ...msg, id: msg.id ?? `m${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, files: msg.files ?? [] }, cx);
     this.saveSoon(cx);
     cx.notify();
   }
 
   deliver(msg, cx) {
+    if (!this.draftLoaded) { cx.spawn(async (cx) => { await this.draftReady; this.draftLoaded = true; this.deliver(msg, cx); }); return; }
     // /model never reaches the CLI by any way in (held, or sent by another mod): send() says why.
     const mm = !msg.files?.length && /^\/model(?:\s+(\S+))?\s*$/i.exec(msg.text ?? "");
     if (mm) { this.modelCommand(mm[1] ?? null, cx); return; }
     if (this.phase === "fresh") { this.startAgent(msg, cx); return; }
     // The CLI shows its own start screen (a card here): typed words could pick one of its
     // choices, so they wait until it is answered (drainQueue()).
-    if (openCard(this.addr)) { this.queue.push(msg); return; }
+    if (openCard(this.addr) || ["finding", "starting"].includes(this.phase)) { this.queue.push(msg); void this.saveDraft(); return; }
     // A card asks (a question, a permission, a plan): the words answer it, as typing in the
     // CLI would (cards.js replyWith); the card's buttons still work too.
     if (this.asks.length && msg.text && !msg.files?.length) {
@@ -1466,17 +1502,21 @@ export default class Chat extends View {
     const body = messageBody({ text: msg.text, quote: msg.quote?.text ?? null, tags: this.taskTags(msg.text) });
     const p = { id: `pending-${msg.id}`, text: msg.text, replyTo: msg.quote ? excerpt(msg.quote.text, 80) : null, files: msg.files.filter((f) => !f.image).map((f) => f.name),
       paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), cursorAfter: this.end, sent: body,
-      match: norm(msg.text).slice(0, 60) || null, msg };
+      match: norm(msg.text).slice(0, 60) || null, msg, prior: (this.conv?.items ?? []).filter((u) => u.kind === "user").map((u) => u.id) };
     this.pending.push(p);
     const menu = msg.files.length ? null : slash.opensMenu(this.kind, msg.text);
     if (menu) this.note = { id: `note-${msg.id}`, text: `/${menu} opens a menu in the terminal. Switching to it.` };
     cx.spawn(async (cx) => {
       let r;
       try {
+        await this.draftReady;
+        await this.saveDraft(true);
         const paths = await attach.deliver(msg.files, this.addr, this.machine);
         p.sent = [body, ...paths].filter(Boolean).join("\n\n");
         // (a message with pictures: its Enter again if Claude Code lost it, sendTyped(); one that stayed in its box
         // last time gets only its Enter now, never typed twice)
+        p.attempted = true;
+        await this.saveDraft(true);
         r = await sendTyped(this.sendIo(cx), this.addr, this.kind, p.sent, SETTLE, !!msg.stuck);
         msg.stuck = !!r.stuck;
         // Its own dialog is open in its terminal (a question or a permission with no card
@@ -1486,10 +1526,11 @@ export default class Chat extends View {
         r = { code: 1, stderr: String(e?.message ?? e) };
       }
       // Kept as a bubble that sends again when pressed (clickRow), so nothing is lost.
-      if (r.code !== 0) { p.failed = refusal(r).message; cx.notify(); return; }
+      if (r.code !== 0) { p.failed = refusal(r).message; p.late = !!p.attempted && !r.stuck; await this.saveDraft(); cx.notify(); return; }
       // In the agent's terminal now: it's sent. The log has it only once taken, so it shows as
       // sent from here.
       p.delivered = true;
+      await this.saveDraft();
       cx.notify();
       // Mid-turn, Claude Code holds a typed message until its turn ends ("ctrl+enter to send
       // now"): send it now, so the agent takes it at once (it steers).
@@ -1505,7 +1546,7 @@ export default class Chat extends View {
       // Not in the log after a while, with the agent no longer busy: say so, and keep it until it shows up.
       for (let i = 0; i < 60 && this.pending.includes(p) && !p.failed; i++) {
         await cx.sleep(i ? 5000 : 20000);
-        if (this.status() !== "working") { p.late = true; cx.notify(); break; }
+        if (this.status() !== "working") { p.late = true; await this.saveDraft(); cx.notify(); break; }
       }
     });
   }
@@ -1531,9 +1572,82 @@ export default class Chat extends View {
     return last ? `It said: ${last.slice(0, 200)}` : "";
   }
 
-  retry(p, cx) {
-    this.pending = this.pending.filter((x) => x !== p);
-    this.deliver(p.msg, cx);
+  recoverPending(cx) {
+    if (this.phase !== "ready") return;
+    for (const p of this.pending.filter((p) => p.restored && !p.attempted && !p.failed)) {
+      this.pending = this.pending.filter((x) => x !== p);
+      this.queue.push(p.msg);
+    }
+  }
+
+  retry(p, cx, resend = false) {
+    if (p.checking) return;
+    p.checking = true;
+    cx.spawn(async (cx) => {
+      try {
+        if (!this.addr && this.slotAgent()) this.follow_to(this.slotAgent());
+        if (this.addr) { await this.locate(cx); await this.pull(cx); this.settlePending(); }
+        if (!this.pending.includes(p)) return;
+        if (p.attempted && !p.msg?.stuck && !resend) { p.late = true; p.checked = true; p.failed = null; return; }
+        this.pending = this.pending.filter((x) => x !== p);
+        this.deliver(p.msg, cx);
+      } catch (e) { this.error = String(e?.message ?? e); }
+      finally { p.checking = false; await this.saveDraft(); cx.notify(); }
+    });
+  }
+
+  async checkHealth(cx) {
+    if (this.healthChecking) return;
+    this.healthChecking = true;
+    cx.notify();
+    try {
+      const rec = this.slotRec();
+      const space = spaces().find((x) => x.id === (props()?.space ?? rec?.space));
+      const machine = this.machine ?? space?.machine ?? null;
+      const terminal = this.ownTerminal();
+      const folder = terminal?.foreground?.cwd ?? terminal?.cwd ?? props()?.folder ?? rec?.folder ?? space?.folder;
+      const key = this.kind ?? this.choice?.sel?.agent ?? props()?.settings?.agent;
+      if (folder && key) {
+        const r = await exec("sh", ["-c", HEALTH_PROBE, "health", key === "cursor" ? "cursor-agent" : key, folder], machine ? { on: machine } : {});
+        this.health = r.code === 0 ? healthProbe(r.stdout) : null;
+      }
+      if (this.addr) {
+        const screen = await hc(["read", this.addr, "--lines", "30"]).catch(() => null);
+        this.healthScreen = screen?.stdout ?? "";
+        await this.locate(cx); await this.pull(cx); this.settlePending();
+      }
+    } catch (e) { this.error = String(e?.message ?? e); }
+    finally { this.healthChecking = false; cx.notify(); }
+  }
+
+  healthCard(t, cx) {
+    const pending = this.pending.find((p) => p.late || p.failed || p.restored);
+    const agentName = this.kind ?? this.choice?.sel?.agent ?? props()?.settings?.agent ?? "Agent";
+    const h = assistantHealth({ ...this.health, agent: agentName, phase: this.phase,
+      active: Boolean(this.conv?.items?.some((x) => x.kind === "agent")), screen: this.healthScreen ?? "",
+      error: this.error ?? "", since: this.healthSince });
+    if (this.phase === "ready" && !h.issue && !pending && !this.queue.length && !this.healthOpen) return div().flex_none().px(16).child(this.button("show-health", "Assistant health", null, "secondary", t, (cx) => { this.healthOpen = true; cx.spawn((cx) => this.checkHealth(cx)); }));
+    const light = { ...t, background: HEALTH_COLORS.background, foreground: HEALTH_COLORS.ink, muted: HEALTH_COLORS.muted,
+      dim: HEALTH_COLORS.muted, border: HEALTH_COLORS.border, accent: HEALTH_COLORS.link };
+    const card = v_flex().id("assistant-health").flex_none().mx(16).my(8).p(12).gap(6).rounded(8)
+      .bg(light.background).border_1().border_color(light.border).text_color(light.foreground)
+      .child(div().font_medium().child("Assistant health"))
+      .children(h.rows.map((r) => div().text_size(12).child(`${r.label}: ${r.text}`)))
+      .when(Boolean(h.detail), (e) => e.child(div().text_size(12).child(h.detail)));
+    const buttons = h_flex().gap(8).child(this.button("health-check", this.healthChecking ? "Checking…" : "Check again", null, "secondary", light, (cx) => cx.spawn((cx) => this.checkHealth(cx))));
+    if (h.action === "choose") buttons.child(this.button("health-agent", "Choose agent", null, "secondary", light, (cx) => this.modelCommand(null, cx)));
+    if (this.addr && h.action === "terminal") buttons.child(this.button("health-screen", h.issue === "login" ? "Complete sign-in" : "Open startup screen", null, "secondary", light, () => this.toTerminal()));
+    if (this.healthOpen) buttons.child(this.button("health-hide", "Hide", null, "secondary", light, (cx) => { this.healthOpen = false; cx.notify(); }));
+    card.child(buttons);
+    if (this.queue.length) card.child(div().text_size(12).child(`${this.queue.length} saved message${this.queue.length === 1 ? "" : "s"} waiting for the agent.`));
+    if (pending) {
+      if (pending.text) card.child(div().text_size(12).child(`Saved message: ${excerpt(pending.text, 160)}`));
+      card.child(div().text_size(12).child(pending.late ? UNCONFIRMED : pending.failed || "Waiting for the agent. Your message is saved."));
+      const actions = h_flex().gap(8).child(this.button("delivery-check", pending.checking ? "Checking…" : "Check delivery", null, "secondary", light, (cx) => this.retry(pending, cx)));
+      if (pending.checked || !pending.attempted) actions.child(this.button("delivery-resend", pending.attempted ? "Send again (may duplicate)" : "Retry saved message", null, "secondary", light, (cx) => this.retry(pending, cx, true)));
+      card.child(actions);
+    }
+    return card;
   }
 
   // Claude Code's "send now" for a message it queued while working: Ctrl+Enter, only when its
@@ -1563,8 +1677,7 @@ export default class Chat extends View {
   // A held message sent at once (the agent takes it mid-turn).
   sendQueued(msg, cx) {
     this.queue = this.queue.filter((m) => m !== msg);
-    if (msg.raw) personHc(["send", this.addr, msg.text]);
-    else this.deliver(msg, cx);
+    this.deliver({ ...msg, id: msg.id ?? `m${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, files: msg.files ?? [] }, cx);
     this.saveSoon(cx);
   }
 
@@ -1655,9 +1768,10 @@ export default class Chat extends View {
 
   // An empty slot chat whose agent is running after all: follow it, as if found at the start.
   adoptSlot(cx) {
+    if (!this.draftLoaded) { this.draftReady.then(() => { this.draftLoaded = true; }); return; }
     if (this.addr || this.phase !== "fresh") return;
     // Messages that waited for their machine (startAgent): once it's back, they start it as one.
-    const waited = this.pending.filter((p) => p.waiting);
+    const waited = this.pending.filter((p) => p.waiting && !p.attempted);
     if (waited.length && online(waited[0].machine)) {
       this.pending = this.pending.filter((p) => !p.waiting);
       const [first, ...rest] = waited.map((p) => p.msg);
@@ -1665,7 +1779,12 @@ export default class Chat extends View {
       return;
     }
     const a = this.slotAgent();
-    if (!a) return;
+    if (!a) {
+      const unsent = this.pending.find((p) => p.restored && !p.attempted && !p.failed && p.msg);
+      if (unsent) { this.pending = this.pending.filter((p) => p !== unsent); this.startAgent(unsent.msg, cx); }
+      else if (this.queueRestored && this.queue.length && !this.pending.length) { this.queueRestored = false; this.startAgent(this.queue.shift(), cx); }
+      return;
+    }
     this.addr = a;
     this.machine = a.includes("/") ? a.split("/")[0] : null;
     this.path = null;
@@ -1693,8 +1812,14 @@ export default class Chat extends View {
   // The first message starts the agent (its template), parked behind this chat, with the
   // message as its task; then the chat follows it as usual.
   startAgent(msg, cx, thenTerminal = false) {
+    if (!this.draftLoaded) { cx.spawn(async (cx) => { await this.draftReady; this.draftLoaded = true; this.startAgent(msg, cx, thenTerminal); }); return; }
     const pane = this.slotPane();
-    if (!pane) { toast({ title: "Couldn't start the Assistant", body: "This chat hasn't found its pane. Try again in a moment.", level: "error" }); return; }
+    if (!pane) {
+      this.error = "This chat hasn't found its pane. Check again in a moment.";
+      if (msg) this.pending.push({ id: `pending-${msg.id}`, text: msg.text, at: Date.now(), msg, failed: this.error });
+      void this.saveDraft(); cx.notify();
+      return;
+    }
     const rec = this.slotRec();
     const space = spaces().find((x) => x.id === (props()?.space ?? rec?.space));
     const machine = space?.machine ?? null;
@@ -1708,19 +1833,22 @@ export default class Chat extends View {
     const local = machine || !msg ? [] : msg.files.map((f) => f.path);
     const task = msg ? [reply + msg.text, ...local].filter(Boolean).join("\n\n") : "";
     const p = msg ? { id: `pending-${msg.id}`, text: msg.text, replyTo: msg.quote ? excerpt(msg.quote.text, 80) : null, files: msg.files.filter((f) => !f.image).map((f) => f.name),
-      paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), cursorAfter: 0, sent: task, match: norm(msg.text).slice(0, 60) || null } : { failed: null };
+      paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), cursorAfter: 0, sent: task, match: norm(msg.text).slice(0, 60) || null, msg, first: true } : { failed: null };
     if (msg) this.pending.push(p);
     // Its machine offline: said plainly under the message, which starts it once the machine is
     // back (adoptSlot); nothing is lost meanwhile.
     if (machine && !online(machine)) {
       if (msg) Object.assign(p, { waiting: WORDS.offline(machine), machine, msg });
       else toast({ title: `${machine} is offline`, body: "Its Assistant starts when it's back." });
+      void this.saveDraft();
       cx.notify();
       return;
     }
+    this.healthSince = Date.now();
     this.phase = "starting";
     cx.notify();
     cx.spawn(async (cx) => {
+      try { await this.draftReady; await this.saveDraft(true); } catch (e) { p.failed = String(e.message); this.phase = "fresh"; cx.notify(); return; }
       // Chosen settings (the New space dialog, props.settings): the template's words with that
       // agent and its flags, as a one-off template (as restart.sh does), written beside the
       // template on the machine it runs on. There, an agent that isn't installed leaves the
@@ -1765,6 +1893,8 @@ export default class Chat extends View {
         ...(space ? ["--label", `herdr.coordinator.space=${String(space.id).split("/").pop()}`] : []),
         ...(rec?.tab ? ["--label", `herdr.coordinator.tab=${String(rec.tab).split("/").pop()}`] : []),
         launch, ...(task ? [task] : [])];
+      p.attempted = true;
+      try { await this.saveDraft(true); } catch (e) { p.failed = String(e.message); this.phase = "fresh"; cx.notify(); return; }
       const r = await hc(args).catch((e) => ({ code: 1, stderr: String(e?.message ?? e), stdout: "" }));
       if (oneOff) exec("sh", ["-c", TEMPLATE + 'rm -f "$dir/$1.md"', "x", oneOff], on);
       let out = {};
@@ -1774,13 +1904,15 @@ export default class Chat extends View {
       // agent runs. Then this chat sends the template's words and the task itself once the agent is
       // idle past that screen (follow()), so the Assistant never starts without its instructions.
       const late = (r.code !== 0 || !out.address) && this.slotAgent();
-      if (late) out = { address: late, first_message: { sent: false } };
+      if (late) { out = { address: late }; p.late = true; }
       if (out.address && out.first_message?.sent === false) this.firstSend = [words, task].filter(Boolean).join("\n\n") || null;
       if (r.code !== 0 && !late || !out.address) {
         p.failed = (r.stderr || r.stdout || "It didn't start.").trim();
-        toast({ title: `The ${this.role === "coordinator" ? "Assistant" : this.role} didn't start`, body: msg ? `${p.failed} Your message is back in the box.` : p.failed, level: "error" });
+        toast({ title: `The ${this.role === "coordinator" ? "Assistant" : this.role} didn't start`, body: msg ? `${p.failed} Your message and attachments are saved.` : p.failed, level: "error" });
         // the fresh chat shows no pending rows: the message goes back in the box rather than vanish (GitHub #839)
-        if (msg) { this.pending = this.pending.filter((x) => x !== p); if (!this.box.value().trim()) this.box.set_value(msg.text); }
+        if (msg) { p.late = true; p.msg = msg; }
+        this.error = p.failed;
+        await this.saveDraft();
         this.phase = "fresh";
         cx.notify();
         return;
@@ -1793,6 +1925,7 @@ export default class Chat extends View {
       this.addr = machine && !out.address.includes("/") ? `${machine}/${out.address}` : out.address;
       this.machine = this.addr.includes("/") ? this.addr.split("/")[0] : null;
       await this.flag();
+      await this.saveDraft();
       this.phase = "finding";
       this.wasFocused = false;
       if (machine && msg?.files.length) {
@@ -1826,6 +1959,7 @@ export default class Chat extends View {
         const st = kept?.agent ? kept : props()?.settings;
         const sel = st?.agent && data.menus[st.agent] ? { perm: data.permDefault[st.agent], effort: null, fast: false, ...st } : { ...data.defaults };
         this.choice = { sel, data, key: this.choice.key };
+        await this.checkHealth(cx);
       } catch { this.choice = null; }
       cx.notify();
     });
@@ -4488,6 +4622,7 @@ export default class Chat extends View {
 
     // Starting (or the new agent's log not there yet): the person's message shows at once.
     const starting = (this.phase === "starting" || (this.phase === "finding" && this.role && !this.path)) && this.pending.length > 0;
+    root.child(this.healthCard(t, cx));
     if (this.phase === "fresh") {
       return root.child(this.fresh(t)).child(this.composer(t, null, cx)).child(div().flex_none().h(12));
     }
