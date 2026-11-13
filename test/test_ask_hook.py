@@ -45,11 +45,11 @@ class AskHook(unittest.TestCase):
             json.dump(t, f)
         os.replace(self.state + ".tmp", self.state)
 
-    def start(self, **env):
+    def start(self, request=None, **env):
         e = {"PATH": f"{self.bin}:{os.environ['PATH']}", "HOME": self.tmp, "HERDR_APP_HOME": self.app,
              "HC_TERMINAL_ID": "t9", "FAKE_HC_STATE": self.state, **env}
         p = subprocess.Popen(["sh", HOOK], stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=e)
-        p.stdin.write(json.dumps(REQ).encode())
+        p.stdin.write(json.dumps(REQ if request is None else request).encode())
         p.stdin.close()
         def stop():
             if p.poll() is None:
@@ -156,6 +156,38 @@ class AskHook(unittest.TestCase):
         p.kill()
         p.wait()
         p.stdout.close()
+
+    def test_codex_auto_review_returns_no_decision_without_a_manual_card(self):
+        for chained in ("", "1"):
+            for flags in (("-c", 'approvals_reviewer="auto_review"'),
+                          ("--config=approvals_reviewer='auto_review'",),
+                          ("-c", 'approvals_reviewer="user"', "--config", 'approvals_reviewer="auto_review"')):
+                with self.subTest(chained=chained, flags=flags):
+                    self.term({"state": "live", "argv": ["sh"], "foreground": {"argv": ["/opt/bin/codex", *flags]}})
+                    self.assertEqual(self.out(self.start(HERDR_ASK_CHAINED=chained), timeout=2), b"",
+                                     "Codex must make the approval decision, not the hook")
+                    self.assertIsNone(self.waiting(0.1))
+
+    def test_manual_custom_and_non_codex_modes_still_ask(self):
+        for argv in (["codex", "-c", 'approvals_reviewer="auto_review"', "-c", 'approvals_reviewer="user"'],
+                     ["codex", 'explain approvals_reviewer="auto_review"'],
+                     ["claude", "-c", 'approvals_reviewer="auto_review"'], ["codex"]):
+            with self.subTest(argv=argv):
+                self.term({"state": "live", "status": "working", "argv": argv})
+                p = self.start()
+                ask = self.waiting()
+                self.assertIsNotNone(ask)
+                open(os.path.join(self.asks, "ans", ask + ".json"), "w").close()
+                self.assertEqual(self.out(p), b"")
+
+    def test_auto_review_does_not_answer_questions_or_plans(self):
+        self.term({"state": "live", "status": "working", "argv": ["codex", "-c", 'approvals_reviewer="auto_review"']})
+        for tool in ("AskUserQuestion", "ExitPlanMode"):
+            p = self.start(request={**REQ, "tool_name": tool})
+            ask = self.waiting()
+            self.assertIsNotNone(ask)
+            open(os.path.join(self.asks, "ans", ask + ".json"), "w").close()
+            self.assertEqual(self.out(p), b"")
 
     def test_without_hc_only_while_a_chat_shows_it(self):
         # no hc or jq: it can't tell the terminal answered, so only a fresh flag brings the card

@@ -63,7 +63,23 @@ ended() { printf '%s\n' "$1" > "$end.tmp" 2>/dev/null && mv "$end.tmp" "$end" 2>
 trap 'ended "$(how declined)"' TERM INT HUP
 mkdir -p "$d/req" "$d/ans" "$d/end" 2>/dev/null || exit 0
 find "$d/end" -type f -mmin +1440 -delete 2>/dev/null
-cat > "$req.tmp" 2>/dev/null && mv "$req.tmp" "$req" 2>/dev/null || done_
+cat > "$req.tmp" 2>/dev/null || done_
+# Permission hooks run before Codex's reviewer. A manual card here would block "Approve for
+# me" forever: return no decision so Codex applies its own review and any policy restrictions.
+if [ "$watch" = 1 ] && jq -e '.tool_name != "AskUserQuestion" and .tool_name != "ExitPlanMode"' "$req.tmp" >/dev/null 2>&1 \
+  && hc get "$t" --json 2>/dev/null | jq -e '
+    (.foreground.argv // .argv // []) as $args |
+    ($args[0] // "" | split("/") | last) == "codex" and
+    ([range(1; $args | length) | . as $i |
+      if $args[$i - 1] == "-c" or $args[$i - 1] == "--config" then $args[$i]
+      elif ($args[$i] | startswith("--config=")) then $args[$i] | ltrimstr("--config=")
+      else empty end |
+      select(test("^\\s*approvals_reviewer\\s*="))] | last // "" |
+      test("^\\s*approvals_reviewer\\s*=\\s*[\"\u0027]?auto_review[\"\u0027]?\\s*$"))
+  ' >/dev/null 2>&1; then
+  done_
+fi
+mv "$req.tmp" "$req" 2>/dev/null || done_
 
 # Claude's own status now: blocked, working, idle, done; "gone" once the terminal ended.
 status() {

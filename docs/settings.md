@@ -170,7 +170,10 @@ The old Use HolyCow switch no longer disables this requirement, including in set
 Guide, Init, Compass, Refine, Lab, Plan, Build, Review, PR and Retro each have their own Claude Code, Codex or
 Cursor model picker, including the selected CLI's reasoning, speed and permission options. Permissions are also shown beside each skill's model. Choices inherit from Everywhere
 unless a space sets its own. **Use role defaults** removes the complete global skill choice, including permissions; a space's **Reset to inherited settings** restores
-its inherited choice. The running Assistant's chat permissions do not change these task defaults. Unset Guide tasks follow Assistant, Review follows Reviewer, and the others follow Workers.
+its inherited choice. Unset Guide tasks follow Assistant, Review follows Reviewer, and the others follow Workers.
+At launch, tasks inherit the live Assistant's selected permission mode while keeping their configured model, reasoning and speed.
+An explicit task choice or read-only restriction takes precedence. Without a live Assistant or a recognized permission preset,
+the saved task defaults apply. Resuming a task preserves its last permission choice.
 Guide's picker controls delegated Guide tasks, not the already-running Assistant.
 
 The Assistant creates work with `herdr-task add "Title" --skill hc-build --prompt "Scope and evidence"` (or another
@@ -219,6 +222,8 @@ Chat, Agents and HolyCow use the same three choices, with icons and an About per
 
 Approval checks still differ by agent. Cursor's saved approval settings and allow rules apply to its normal launch. Automatic review needs support from the installed CLI, account, model and organization policy. Full access does not override every provider or organization restriction. The info button explains the active agent's behavior.
 
-Existing special modes remain saved and appear as Custom (or Read only); opening a menu never migrates them. HolyCow Review remains read-only. Changing agents maps the selected shared choice to the new CLI and preserves read-only restrictions. Settings affect new launches; chat changes restart only the current agent.
+Existing special modes remain saved and appear as Custom (or Read only); opening a menu never migrates them. HolyCow Review remains read-only. Changing agents maps the selected shared choice to the new CLI and preserves read-only restrictions. Settings affect new launches; chat changes restart only the current agent. Existing running tasks keep their current permissions.
+For Codex, Approve for me lets the native automatic reviewer handle permission requests without an extra manual chat card;
+requests the reviewer cannot approve can still require your decision.
 
 Mappings follow the [official OpenAI sandbox documentation](https://learn.chatgpt.com/docs/sandboxing), [Claude permission modes](https://code.claude.com/docs/en/permissions), and [Cursor CLI parameters](https://cursor.com/docs/cli/reference/parameters). Cursor Auto-review is also verified against the installed CLI's help.

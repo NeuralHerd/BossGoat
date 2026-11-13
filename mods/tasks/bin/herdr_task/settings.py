@@ -174,18 +174,13 @@ def argv_for(pick):
         if pick.get("effort"):
             a += ["--effort", pick["effort"]]
         a += ["--settings", json.dumps({"fastMode": bool(pick.get("fast"))})]
-        perm = pick.get("perm")
-        if perm == "bypassPermissions":
-            a.append("--dangerously-skip-permissions")
-        elif perm:
-            a += ["--permission-mode", "default" if perm == "manual" else perm]
+        a += permission_argv(agent, pick.get("perm"))
         return a
     if agent == "cursor":
         if pick.get("effort") or pick.get("fast"):
             raise Fail("Choose Cursor reasoning and speed through its model ID.")
         a = ["cursor-agent", "--model", pick.get("model") or "auto"]
-        perm = pick.get("perm")
-        a += ["--force"] if perm == "full" else ["--mode", "ask"] if perm == "read-only" else [] if perm == "ask" else ["--auto-review"]
+        a += permission_argv(agent, pick.get("perm"))
         return a
     if agent == "codex":
         a = ["codex", "--no-daemon"]
@@ -195,17 +190,86 @@ def argv_for(pick):
             a += ["-c", f'model_reasoning_effort="{pick["effort"]}"']
         # always said, so Fast off wins over a service_tier in config.toml (default: the standard tier)
         a += ["-c", 'service_tier="%s"' % ("fast" if pick.get("fast") else "default")]
-        perm = pick.get("perm")
+        a += permission_argv(agent, pick.get("perm"))
+        return a
+    return [agent] if agent else None
+
+
+def permission_argv(agent, perm):
+    if agent == "claude":
+        return (["--dangerously-skip-permissions"] if perm == "bypassPermissions" else
+                ["--permission-mode", "default" if perm == "manual" else perm] if perm else [])
+    if agent == "cursor":
+        return (["--force"] if perm == "full" else ["--mode", "ask"] if perm == "read-only" else
+                [] if perm == "ask" else ["--auto-review"])
+    if agent == "codex":
         if perm == "full":
-            a.append("--dangerously-bypass-approvals-and-sandbox")
-        elif perm == "read-only":
-            a += ["-s", "read-only", "-a", "on-request"]
-        elif perm:
-            a += ["-s", "workspace-write", "-a", "on-request"]
+            return ["--dangerously-bypass-approvals-and-sandbox"]
+        a = ["-s", "read-only" if perm == "read-only" else "workspace-write", "-a", "on-request"] if perm else []
         if perm in ("ask", "approve"):
             a += ["-c", 'approvals_reviewer="%s"' % ("auto_review" if perm == "approve" else "user")]
         return a
-    return [agent] if agent else None
+    return []
+
+
+def permission_tokens(argv):
+    """Permission options and their spans, leaving model flags and prompt text alone."""
+    agent = agent_key(argv)
+    flags = {"claude": {"--permission-mode": "mode", "--dangerously-skip-permissions": "full"},
+             "cursor": {"--mode": "mode", "--plan": "read", "--force": "full", "-f": "full",
+                        "--yolo": "full", "--auto-review": "auto"},
+             "codex": {"-s": "sandbox_mode", "--sandbox": "sandbox_mode", "-a": "approval_policy",
+                       "--ask-for-approval": "approval_policy", "--full-auto": "legacy",
+                       "--dangerously-bypass-approvals-and-sandbox": "full", "--yolo": "full",
+                       "-c": "config", "--config": "config"}}.get(agent, {})
+    i = 1
+    while i < len(argv):
+        if argv[i] == "--":
+            break
+        flag, eq, value = argv[i].partition("=")
+        key, end = flags.get(flag), i + 1
+        if key and key not in ("full", "read", "auto", "legacy") and not eq:
+            if end == len(argv):
+                break
+            value, end = argv[end], end + 1
+        if key == "config":
+            key, sep, value = value.partition("=")
+            key = key.strip() if sep else None
+            if key not in ("sandbox_mode", "approval_policy", "approvals_reviewer"):
+                key = None
+        if key:
+            yield i, end, key, value.strip().strip("\"'")
+        i = end
+
+
+def permission_mode(argv):
+    """An explicitly selected shared preset; unknown CLI defaults are not permission grants."""
+    if not argv:
+        return None
+    o = {key: value for _, _, key, value in permission_tokens(argv)}
+    agent = agent_key(argv)
+    if "full" in o or o.get("sandbox_mode") == "danger-full-access" or o.get("mode") == "bypassPermissions":
+        return "full"
+    if "read" in o or o.get("sandbox_mode") == "read-only" or o.get("mode") == "plan" or agent == "cursor" and o.get("mode") == "ask":
+        return "read-only"
+    if agent == "codex":
+        return {"auto_review": "approve", "user": "ask"}.get(o.get("approvals_reviewer"))
+    if "auto" in o or o.get("mode") == "auto":
+        return "approve"
+    if agent == "claude" and o.get("mode") in ("default", "manual") or agent == "cursor":
+        return "ask"
+    return None
+
+
+def inherit_permission(argv, source):
+    """Carry the Assistant's preset across CLIs without replacing the task's model or effort."""
+    mode, agent = permission_mode(source), agent_key(argv)
+    if mode is None or agent not in AGENTS or permission_mode(argv) == "read-only":
+        return argv
+    perm = {"claude": {"ask": "manual", "approve": "auto", "full": "bypassPermissions", "read-only": "plan"},
+            "codex": {"approve": "approve"}, "cursor": {"approve": "auto"}}[agent].get(mode, mode)
+    remove = {i for start, end, _, _ in permission_tokens(argv) for i in range(start, end)}
+    return [argv[0], *permission_argv(agent, perm), *(v for i, v in enumerate(argv[1:], 1) if i not in remove)]
 
 
 def worker_pick(s, task, space=None, agent=None):

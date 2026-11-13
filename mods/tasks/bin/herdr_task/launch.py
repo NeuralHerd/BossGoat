@@ -16,7 +16,7 @@ import sys
 import time
 
 from .base import ASK_HOME, ENTRY, Fail, git, hc_json, now, run, WORKTREES
-from .settings import agent_key, ASSISTANT_TEMPLATES, trust_roots, bare, BRANCH_PATTERN, branch_pattern_problem, keep_review, notes, notes_part, review_limits, settings_block, settings_for
+from .settings import agent_key, inherit_permission, ASSISTANT_TEMPLATES, trust_roots, bare, BRANCH_PATTERN, branch_pattern_problem, keep_review, notes, notes_part, review_limits, settings_block, settings_for
 from .templates import instructions
 from .holycow import skill_note, require_assignment
 from .agents import detail, LINE_MAX, live_agents, SUMMARY_MAX
@@ -785,6 +785,15 @@ def coordinator_in(space):
 def parent_for(parent, space):
     """A task agent's parent: `parent` while it's live, else the space's coordinator."""
     return live_parent(parent) or coordinator_in(space)
+
+
+def inherit_permissions(argv, parent):
+    """Only a live Assistant supplies defaults; worker/reviewer parents cannot broaden access."""
+    k = hc_json("get", parent) if parent else None
+    if not k or k.get("state") != "live" or not is_coordinator(k):
+        return argv
+    source = (k.get("foreground") or {}).get("argv") or k.get("argv") or []
+    return inherit_permission(argv, source)
 
 
 def agent_name(s, task, suffix=None):

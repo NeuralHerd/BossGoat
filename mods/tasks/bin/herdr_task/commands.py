@@ -25,7 +25,7 @@ from .github import (already_merged, drop_branch, finish, gh, github, merged_her
 from .github import CHECKS_RUNNING as PR_CHECKS_RUNNING
 from .launch import (
     base_ref, brief, holycow_brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
-    own_path, parent_for, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
+    inherit_permissions, own_path, parent_for, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
 )
 from .store import is_task_list, locate, open_store, prefixes_in_use, read_list, Store, store_files
 from .queues import after_refs, parse_after, queue_reason, set_after
@@ -260,9 +260,12 @@ def cmd_show(args):
     say(args, v, "\n".join(text))
 
 
-def begin(s, t, argv, space, parent=None):
+def begin(s, t, argv, space, parent=None, custom=False):
     """Starts the task's first agent. Returns its record."""
     holycow_brief(s, t, space, argv)
+    parent = parent_for(parent, space)
+    if not custom and not (t.get("queue") or {}).get("custom"):
+        argv = inherit_permissions(argv, parent)
     t["state"], t["started"] = "running", now()
     # Its brief teaches `reviewed`: ready waits for a review of its final commit (review_refusal).
     t["review_gate"] = True
@@ -275,7 +278,6 @@ def begin(s, t, argv, space, parent=None):
         # The folder's commit as it starts: still there, and nothing tracked changed, at ready means
         # it changed nothing, so there is nothing to review (review_refusal, #744).
         t["folder_start"] = git(s.loc["folder"], "rev-parse", "HEAD")[1] or None
-    parent = parent_for(parent, space)
     return launch(s, t, argv, space, brief(s, t, parent, space, argv), parent=parent)
 
 
@@ -314,7 +316,7 @@ def cmd_start(args):
             s.dirty = True
             v = view(s, t)
         else:
-            a = begin(s, t, argv, space, parent)
+            a = begin(s, t, argv, space, parent, **({"custom": True} if args.argv else {}))
             v = view(s, t)
     # The scheduler starts queued tasks and tells the Assistant its tasks' news.
     try:
@@ -904,6 +906,8 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     keep = prev and prev.get("argv") and (t.get("pick_at") or 0) <= (prev.get("at") or 0)
     argv = agent_argv(None, argv_json) if argv_json else worker_argv(s, t, space, key) if key else \
         (prev["argv"] if keep else worker_argv(s, t, space))
+    if not argv_json and (key or not keep):
+        argv = inherit_permissions(argv, parent)
     same = prev and agent_key(argv) == prev.get("agent")
     res = resume_argv(argv, prev["session"]) if same and prev.get("session") else None
     if res:
