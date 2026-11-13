@@ -100,7 +100,9 @@ export const noPlanWords = (s) => (s.limitsAt ? "No agent CLIs here." : "Reading
 // A CLI's heading: its name and plan ("Claude Code · Max").
 export const cliTitle = (r) => r.name + (r.read?.plan ? ` · ${r.read.plan.replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase())}` : "");
 export const usageRecovery = (read, name) => /sign.in|renewal|signed.out/i.test(`${read.failed ?? ""} ${read.why ?? ""} ${read.state}`)
-  ? `Open ${name} on this machine and complete sign-in if prompted. Then refresh usage.` : null;
+  ? name === "Codex"
+    ? "Run codex login on this machine and complete sign-in in the browser. Then refresh usage; opening a Codex chat alone does not renew sign-in."
+    : `Open ${name} on this machine and complete sign-in if prompted. Then refresh usage.` : null;
 export const usageStamp = (read, now = Date.now()) => `${readOld(read, now) ? "Last known usage" : "Read"} ${ago(read.at, now)}`;
 // A read older than OLD, or one that failed since, shows amber.
 export const readOld = (read, now = Date.now()) => now - read.at > OLD || Boolean(read.failed);

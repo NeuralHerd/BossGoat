@@ -459,7 +459,7 @@ def codex():
         return {"state": "signed-out"}
     login = os.path.join(home, "auth.json")
     if os.path.exists(login) and _codex_due(_json_file(login) or {}, now_ms()):
-        return DUE
+        return {"state": "unknown", "why": "Sign-in needs renewal. Run codex login on this machine, complete browser sign-in, then refresh usage."}
     kept = [p for p in (login, os.path.join(home, "config.toml")) if os.path.exists(p)]
     if not MAC:
         # Codex won't start without its own databases, so it gets empty ones.

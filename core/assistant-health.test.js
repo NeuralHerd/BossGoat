@@ -44,7 +44,8 @@ test("failed usage refresh keeps the last reading but labels it stale with a rec
   expect(failed.at).toBe(before.at);
   expect(usageStamp(failed, 2000)).toStartWith("Last known usage");
   expect(failedWords(failed)).not.toContain("the next agent");
-  expect(usageRecovery(failed, "Codex")).toContain("complete sign-in");
+  expect(usageRecovery(failed, "Codex")).toContain("codex login");
+  expect(usageRecovery(failed, "Codex")).toContain("complete sign-in in the browser");
   const fresh = nextRead(failed, { ...before, at: 2000 });
   expect(fresh.failed).toBeUndefined();
   expect(usageStamp(fresh, 2000)).toStartWith("Read");
