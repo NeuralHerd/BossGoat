@@ -1,5 +1,9 @@
 # Settings: Everywhere and a space's own
 
+For release or migration tasks, see [delivery evidence and handoffs](delivery.md)
+for what Review, Proof and task lifecycle states establish, and which outcomes
+still require native verification.
+
 Every setting has a value for **Everywhere**, the default. A setting that makes sense per space can also be set for
 one **space**: the space's own wins there, and a setting the space doesn't set is inherited from Everywhere. Reset
 drops the space's own, and it inherits again. A few settings are one for every space, or one per machine.
