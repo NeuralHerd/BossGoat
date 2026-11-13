@@ -41,6 +41,17 @@ A receiving checkout may be older than the requested PR. A timeout after submiss
 does not mean an operation failed: inspect its native ID and resulting state before
 retrying. A runtime failure must not replay an already-completed data migration.
 
+For expensive validation, carry forward the last qualified candidate, its native
+run/artifact links, the subsequent delta and the evidence that delta invalidates.
+Retain unaffected passing evidence, test affected changes and dependencies, and
+refresh production parity/freshness before deployment. Record the current
+repository admission policy separately: exact-final-commit CI is not a universal
+requirement to repeat all warehouse work. A reviewed native CI path must support
+reuse before it replaces an existing required run; a worker must not relabel an
+old success or remove a gate. Missing artifacts or uncertain dependency coverage
+require broader validation. Follow HolyCow's delivery reference for the shared
+method; keep dbt commands and acceptance rules in the analytics repository.
+
 Use the configured review owner and rounds. Keep findings and their dispositions
 with the handoff; starting a replacement worker does not reset unresolved findings.
 If the task includes deployment, verify the live result before describing that
