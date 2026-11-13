@@ -640,6 +640,14 @@ def load_record(root):
         return None
 
 
+def source_revision(src):
+    try:
+        r = subprocess.run(["git", "-C", src, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
 def save_record(root, rec):
     atomic_write(os.path.join(root, RECORD), (json.dumps(rec, indent=2, sort_keys=True) + "\n").encode())
 
@@ -1195,7 +1203,7 @@ def cmd_install(a, update=False):
         install_guard(r, src, rec)
     if not a.no_hooks:
         rec["hooks"] = add_hooks(r, rec)
-    rec.update({"version": VERSION, "source": src, "at": r.stamp, "root": root})
+    rec.update({"version": VERSION, "revision": source_revision(src), "source": src, "at": r.stamp, "root": root})
     if a.dry_run:
         say("  keys.json: " + ("would change" if keys_changed else "nothing to add"))
     else:
@@ -1298,7 +1306,7 @@ def cmd_install_web(a, update=False):
             r.backup(rel, move=True)
         os.makedirs(os.path.dirname(r.p(rel)), exist_ok=True)
         os.symlink(dest, r.p(rel))
-    rec.update({"files": files, "links": links, "version": VERSION, "source": src, "at": r.stamp, "root": root, "web": True})
+    rec.update({"files": files, "links": links, "version": VERSION, "revision": source_revision(src), "source": src, "at": r.stamp, "root": root, "web": True})
     # what this run replaced (an older herdr-task, the helpers…): uninstall puts it back
     if r.backed:
         rec["backups"] = [*rec.get("backups", []), r.backup_dir]

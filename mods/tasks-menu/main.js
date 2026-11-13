@@ -14,7 +14,7 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex } from "gpui-base";
-import { props, closeOverlay, theme, shared, setShared, exec, appHome } from "herdr";
+import { props, closeOverlay, theme, shared, setShared, exec, appHome, run } from "herdr";
 import { menuRow, heading, toast, TEXT } from "./ui.js";
 import { taskMenu } from "./core/menus.js";
 
@@ -41,7 +41,7 @@ function rowSections(p) {
     if (it.sep || it.heading || !cur) out.push(cur = { title: it.heading ? (p.status === "scheduled" && p.sub ? `${it.heading} · ${p.sub}` : it.heading) : null,
       checks: false, current: null, items: [], pick: (key) => rowPick(p, key) });
     if (it.sep || it.heading) continue;
-    cur.items.push({ key: `${it.id}:${cur.items.length}`, label: it.label, at: it.at, in: it.in, id: it.id,
+    cur.items.push({ key: `${it.id}:${cur.items.length}`, label: it.id === "start-now" && p.preview ? "Review and start" : it.label, at: it.at, in: it.in, id: it.id,
       icon: it.icon === "play" ? "mods/tasks/play.svg" : `mods/workspace-chrome/${it.icon}.svg` });
   }
   return out.filter((s) => s.items.length);
@@ -54,6 +54,12 @@ function rowPick(p, key) {
     const v = shared("tasks.pinned");
     const rest = (Array.isArray(v) ? v : []).filter((k) => k !== p.key);
     setShared("tasks.pinned", p.on ? rest : [...rest, p.key]);
+    return;
+  }
+  if (it.id === "start-now" && p.preview) {
+    setShared("tasks.thread", { ...p.preview, terminal: null, note: "Review launch settings before starting.", at: Date.now() });
+    run("layout.select", { stack: "tasks", child: "tasks-thread" });
+    run("layout.select", { stack: "tasks-thread-body", child: "tasks-thread-chat" });
     return;
   }
   const args = it.id === "start-now" ? ["start", p.ref, "--now"] : it.id === "unschedule" ? ["edit", p.ref, "--at", ""]

@@ -1,4 +1,5 @@
 import { attentionCounts } from './attention.ts'
+import { TaskLaunchPreview } from './TaskLaunchPreview.tsx'
 // The layout: places | coordinator chat | tasks or artifacts on a desktop (sidebars resize, places hides), and an open
 // task's side panel after them (focus hides places and the chat, for the task); chat | tasks or artifacts with places in a drawer on a tablet; one column with a
 // Chat | Tasks | Artifacts switch on a phone, where a task's panel items open as sheets. Every part inside comes from a
@@ -510,7 +511,7 @@ function TaskPage({ task, middle, pane }: { task: Task; middle?: boolean; pane?:
     <ChatGone task={task} />
   ) : (
     // never started: why it waits, as the window's (a queued one's reason, else that it hasn't started)
-    <Empty>{(task.status === 'queued' || task.status === 'scheduled') && task.sub ? capital(task.sub) : "This task hasn't started."}</Empty>
+    <TaskLaunchPreview key={task.id} task={task.id} note={(task.status === 'queued' || task.status === 'scheduled') && task.sub ? capital(task.sub) : "This task hasn't started."} />
   )
   if (phone)
     return (

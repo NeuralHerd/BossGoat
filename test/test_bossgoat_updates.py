@@ -31,7 +31,8 @@ class Updates(unittest.TestCase):
             self.run_git("-C", str(folder), "config", "user.name", "Update Test")
             self.run_git("-C", str(folder), "config", "user.email", "update@example.test")
         (self.src / "lib").mkdir()
-        (self.src / "lib/addons.json").write_text("{}")
+        (self.src / "lib/addons.json").write_text(json.dumps({"core": {"mods": [], "layouts": []}, "addons": []}))
+        (self.src / "templates").mkdir()
         (self.src / "install.sh").write_text("# test source")
         (self.src / "content").write_text("old")
         self.commit(self.src, "initial")
@@ -68,6 +69,57 @@ class Updates(unittest.TestCase):
         self.assertFalse(U.check(str(self.root))["available"])
         with mock.patch.object(U, "matches", return_value=False):
             self.assertTrue(U.check(str(self.root))["available"])
+
+    def test_status_after_pull_shows_same_version_but_uninstalled_revision_without_fetch(self):
+        old = self.run_git("-C", str(self.src), "rev-parse", "HEAD")
+        rec = U.record(str(self.root)); rec["revision"] = old; U.I.save_record(str(self.root), rec)
+        (self.src / "bin").mkdir()
+        (self.src / "bin/shepherdr").write_text('VERSION = "3.1.30"\n')
+        self.commit(self.src, "same version, new code")
+        new = self.run_git("-C", str(self.src), "rev-parse", "HEAD")
+        with mock.patch.object(U, "matches", return_value=False):
+            got = U.status(str(self.root))
+        self.assertEqual(got["installed_revision"], old)
+        self.assertEqual(got["repository_revision"], new)
+        self.assertEqual(got["installed_version"], got["repository_version"])
+        self.assertTrue(got["needs_install"])
+        self.assertTrue(got["available"])
+        self.assertIn("not installed", got["message"])
+
+    def test_dirty_source_stays_visible_but_cannot_be_installed(self):
+        (self.src / "content").write_text("local edits")
+        with mock.patch.object(U, "matches", return_value=False):
+            got = U.status(str(self.root))
+        self.assertTrue(got["repository_dirty"])
+        self.assertFalse(got["available"])
+        self.assertIn("Commit or stash", got["message"])
+
+    def test_status_reconciles_a_cached_offer_after_manual_install(self):
+        head = self.run_git("-C", str(self.src), "rev-parse", "HEAD")
+        U.save(str(self.root), {"state": "available", "available": True, "revision": head})
+        got = U.status(str(self.root))
+        self.assertEqual(got["state"], "current")
+        self.assertFalse(got["available"])
+        self.publish()
+        U.save(str(self.root), U.check(str(self.root)))
+        self.assertTrue(U.status(str(self.root))["available"])
+        self.run_git("-C", str(self.src), "pull", "--ff-only")
+        (self.src / "content").write_text("later installed revision")
+        self.commit(self.src, "a later installed revision")
+        self.assertFalse(U.status(str(self.root))["available"])
+
+    def test_invalid_source_is_an_actionable_status_not_a_traceback(self):
+        (self.src / "lib/addons.json").write_text("{}")
+        with mock.patch.object(U, "matches", side_effect=KeyError("core")):
+            got = U.status(str(self.root))
+        self.assertEqual(got["state"], "error")
+        self.assertFalse(got["available"])
+        self.assertIn("Could not compare", got["message"])
+
+    def test_old_install_record_never_invents_an_installed_revision(self):
+        got = U.status(str(self.root))
+        self.assertIsNone(got["installed_revision"])
+        self.assertEqual(got["repository_revision"], self.run_git("-C", str(self.src), "rev-parse", "HEAD"))
 
     def test_dirty_checkout_is_not_overwritten(self):
         (self.src / "content").write_text("my edits")

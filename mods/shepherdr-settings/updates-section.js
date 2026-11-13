@@ -31,6 +31,7 @@ export function runUpdate(view, action, cx) {
 }
 
 export function updatesSection(view, t, cx) {
+  t = { ...t, popover: "#ffffff", background: "#f9f9fa", foreground: "#1d1d1f", muted: "#1d1d1fcc", border: "#1d1d1f21" };
   const state = view.updates;
   const result = state.result;
   const busy = state.busy || result?.state === "installing";
@@ -41,14 +42,16 @@ export function updatesSection(view, t, cx) {
     .child(div().text_size(22).font_semibold().child("Updates"))
     .child(div().text_size(13).text_color(t.muted).child("BossGoat on this computer"))
     .child(v_flex().gap(16).p(20).rounded(14).bg(t.background).border_1().border_color(t.border)
-      .child(div().text_size(17).font_semibold().child(result?.version ? `BossGoat ${result.version}` : "BossGoat"))
+      .child(div().text_size(17).font_semibold().child("BossGoat"))
+      .child(div().text_size(13).child(`Installed: ${result?.installed_version ?? result?.version ?? "Not recorded"} · ${result?.installed_revision?.slice(0, 8) ?? "revision not recorded"}`))
+      .child(div().text_size(13).child(`Repository: ${result?.repository_version ?? "Unknown"} · ${result?.repository_revision?.slice(0, 8) ?? "revision unavailable"}${result?.repository_dirty ? " · Local edits" : ""}`))
       .child(div().text_size(14).line_height("22px").whitespace_normal().text_color(result?.state === "error" ? red() : t.muted).child(message))
       .when(Boolean(result?.checked_at), (el) => el.child(div().text_size(12).text_color(t.muted)
         .child(`Last checked ${new Date(result.checked_at).toLocaleString()}`)))
       .child(h_flex().flex_wrap().gap(10)
         .child(control("updates-changes", "What’s new", (_e, cx) => cx.open_url(CHANGELOG)))
         .child(control("updates-check", "Check now", (_e, cx) => runUpdate(view, "check", cx), false, busy))
-        .when(Boolean(result?.available), (el) => el.child(control("updates-install", "Update now", (_e, cx) => runUpdate(view, "install", cx), true, busy)))))
+        .when(Boolean(result?.available), (el) => el.child(control("updates-install", result?.needs_install ? "Apply downloaded changes" : "Update now", (_e, cx) => runUpdate(view, "install", cx), true, busy)))))
     .child(div().text_size(13).line_height("21px").text_color(t.muted).whitespace_normal()
       .child("Updates follow this installation’s tracked branch and use the normal BossGoat installer, including its backups. Herdr and herdr-core update separately in Herdr’s settings."))
     .when(Boolean(result?.state === "error" && result?.log), (el) => el.child(control("updates-log", "View update log", (_e, cx) => cx.open_url(`file://${result.log}`))));

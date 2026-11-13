@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# The fork's compatibility check, kept separate from upstream's general checks.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+python3 bin/sync-shared --check
+(cd test && python3 -m unittest test_cursor test_holycow test_task_permissions test_task_preview test_task_preview_ui test_bossgoat_updates test_bossgoat_updates_ui)
+bun test core/cursor.test.js core/chat-log.test.js core/settings.test.js core/permission-menu.test.js core/assistant-health.test.js service/cursor-actions.test.ts service/settings.test.ts service/settings-guard.test.ts service/machines-recovery.test.ts

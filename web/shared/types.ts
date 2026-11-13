@@ -290,6 +290,12 @@ export interface TaskAgent {
   note: string
 }
 
+export interface TaskLaunchPreview {
+  ready: boolean
+  rows: { label: string; text: string }[]
+  problems: string[]
+}
+
 export interface Task {
   /** short name, as people say it: GTM-15 */
   id: string
@@ -1295,6 +1301,7 @@ export type Action =
   | { type: 'reopen'; chat: string }
   /** SHEP-38: start a task that hasn't started by itself later (herdr-task edit --at / --in, the words as typed), take that
    *  back (off: back to To do) or start a scheduled one now */
+  | { type: 'task-preview' | 'task-start'; task: string }
   | { type: 'schedule'; chat: string; at?: string; in?: string; off?: boolean; now?: boolean }
   /** delete a task: its agent, herdr space, worktree, branch, chat and record; refused while it holds work, unless force */
   | { type: 'delete'; chat: string; force?: boolean }

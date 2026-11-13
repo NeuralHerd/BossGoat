@@ -11,7 +11,7 @@ SOURCE = re.sub(r'^import .*?;\n', '', SOURCE, flags=re.M)
 HARNESS = r'''
 import assert from 'node:assert/strict';
 let reply = {state: 'current', version: '3.1.30', available: false}, request;
-const requests = [], timers = [], jobs = [], controls = [];
+const requests = [], timers = [], jobs = [], controls = [], texts = [];
 const appHome = () => '/example/app';
 const red = () => '#ff6369';
 const exec = async (program, args) => {
@@ -20,12 +20,12 @@ const exec = async (program, args) => {
 };
 const cx = {notify() {}, spawn: fn => jobs.push(fn(cx)), timer: {after: (ms, fn) => timers.push(fn)}};
 function element() {
-  const el = new Proxy({}, {get: (_, name) => name === 'when' ? (yes, fn) => yes ? fn(el) : el : () => el});
+  const el = new Proxy({}, {get: (_, name) => name === 'when' ? (yes, fn) => yes ? fn(el) : el : (...args) => { if (name === 'child' && typeof args[0] === 'string') texts.push(args[0]); return el; }});
   return el;
 }
 const div = element, v_flex = element, h_flex = element;
 const button = (id, label, options) => { controls.push({id, label, ...options}); return element(); };
-const render = view => { controls.length = 0; updatesSection(view, {}, cx); };
+const render = view => { controls.length = 0; texts.length = 0; updatesSection(view, {}, cx); };
 const settle = async () => { request(); await jobs.shift(); };
 '''
 
@@ -85,4 +85,18 @@ assert.equal(controls.find(c => c.id === 'updates-check').disabled, false);
 assert.equal(controls.some(c => c.id === 'updates-install'), false);
 assert.equal(controls.some(c => c.id === 'updates-log'), true);
 assert.equal(timers.length, 0);
+''')
+
+    def test_same_version_revisions_explain_downloaded_changes_and_dirty_checkout(self):
+        self.run_js(r'''
+const view = {updates: updatesInit()};
+view.updates.result = {state: 'available', available: true, needs_install: true, installed_version: '3.1.33', repository_version: '3.1.33', installed_revision: '11111111aaa', repository_revision: '22222222bbb'};
+render(view);
+assert.ok(texts.includes('Installed: 3.1.33 · 11111111'));
+assert.ok(texts.includes('Repository: 3.1.33 · 22222222'));
+assert.equal(controls.find(c => c.id === 'updates-install').label, 'Apply downloaded changes');
+view.updates.result = {...view.updates.result, repository_dirty: true, available: false};
+render(view);
+assert.ok(texts.some(t => t.includes('Local edits')));
+assert.equal(controls.some(c => c.id === 'updates-install'), false);
 ''')

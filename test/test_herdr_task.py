@@ -2674,6 +2674,7 @@ class Scheduled(unittest.TestCase):
         from unittest import mock
         sys.path.insert(0, BIN)
         import herdr_task.commands as commands
+        import herdr_task.launch as launch
         import herdr_task.queues as queues
         import herdr_task.settings as settings
         import herdr_task.store as store
@@ -2705,8 +2706,9 @@ class Scheduled(unittest.TestCase):
                    mock.patch.object(commands, "begin", begin), mock.patch.object(tick, "begin", begin),
                    mock.patch.object(commands, "ensure_scheduler", lambda quiet=False: {}),
                    mock.patch.object(commands, "default_space", lambda: "sp1"),
+                   mock.patch.object(launch, "default_space", lambda: "sp1"),
                    mock.patch.object(commands, "caller_space", lambda: None),
-                   mock.patch.object(commands, "worker_argv", lambda s, t, space, key=None: ["claude"]),
+                   mock.patch.object(settings, "worker_argv", lambda s, t, space, key=None: ["claude"]),
                    mock.patch.object(tick, "worker_argv", lambda s, t, space, key=None: ["claude"]),
                    mock.patch.object(commands, "live_agents", lambda key: []),
                    mock.patch.object(queues, "live_agents", lambda key: []),

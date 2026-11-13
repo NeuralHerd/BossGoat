@@ -75,7 +75,7 @@ class TaskPermissions(unittest.TestCase):
                 if queued:
                     task["queue"] = {"argv": ASK, "custom": custom}
                 with patch.object(commands, "holycow_brief"), patch.object(commands, "folder_for"), \
-                     patch.object(commands, "parent_for", return_value="t1"), \
+                     patch.object(launch, "parent_for", return_value="t1"), \
                      patch.object(launch, "hc_json", return_value={"state": "live", "template": "assistant", "argv": AUTO}), \
                      patch.object(commands, "brief", return_value="brief") as brief, \
                      patch.object(commands, "launch", side_effect=lambda s, t, argv, *a, **kw: argv):

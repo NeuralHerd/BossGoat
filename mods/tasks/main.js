@@ -854,7 +854,7 @@ export default class Tasks extends View {
     if (!threads()) return null;
     const { list, task } = p;
     const m = list.machine ?? null;
-    const key = { machine: m, folder: list.folder, slug: list.slug, id: task.id };
+    const key = { machine: m, folder: list.folder, slug: list.slug, id: task.id, space: task.queue?.space || task.space || spaceOf(list).id };
     const open = (terminal, more = {}) => () => openThread({ terminal, task: refOf(list, task), title: task.title, key, ...more });
     const worker = p.live.find((x) => x.role !== "reviewer" && x.status === "blocked") ?? p.live.find((x) => x.role !== "reviewer") ?? p.live[0];
     if (worker) return open(worker.address);
@@ -882,7 +882,8 @@ export default class Tasks extends View {
       dim: section === "done", selected: focused, where: bare ? null : this.whereOf(list.machine, placeName(list)),
       action: section === "ready" ? this.acceptButton(p, t) : null,
       pin: this.shelved(p) ? null : { key, on: this.pins().has(key), status: section, machine: list.machine ?? null, folder: list.folder,
-        ref: refOf(list, task), sub: section === "scheduled" ? sub : null },
+        ref: refOf(list, task), sub: section === "scheduled" ? sub : null,
+        preview: { task: refOf(list, task), title: task.title, key: { machine: list.machine ?? null, folder: list.folder, slug: list.slug, id: task.id, space: task.queue?.space || task.space || spaceOf(list).id } } },
     }, t);
   }
 
@@ -917,7 +918,7 @@ export default class Tasks extends View {
       first = false;
     }
     openOverlay({ mod: "tasks-menu", kind: "popup", at: "pointer", width: 220, height, props: { menu: "row", key: pin.key, on: pin.on,
-      status: pin.status, machine: pin.machine, folder: pin.folder, ref: pin.ref, sub: pin.sub } });
+      status: pin.status, machine: pin.machine, folder: pin.folder, ref: pin.ref, sub: pin.sub, preview: pin.preview } });
   }
 
   // Ready = "looks done, your call": Review (opens the Accept card) is the person's one action here, at the row's end. It merges first when there is something to merge (herdr-task accept follows the merge

@@ -796,6 +796,56 @@ def inherit_permissions(argv, parent):
     return inherit_permission(argv, source)
 
 
+def start_choices(s, task, space=None, agent=None, argv=None, parent=None):
+    from .settings import agent_argv, worker_argv
+    q = task.get("queue") or {}
+    space = bare(space) if space else q.get("space") or default_space()
+    args = agent_argv(None, argv) if argv else worker_argv(s, task, space, agent) if agent else q.get("argv") or worker_argv(s, task, space)
+    return {"argv": args, "space": space, "parent": parent or q.get("parent"),
+            **({"custom": True} if argv or q.get("custom") else {})}
+
+
+def effective_launch(argv, space, parent=None, custom=False):
+    parent = parent_for(parent, space)
+    return (argv if custom else inherit_permissions(argv, parent)), parent
+
+
+def launch_preview(s, task, **choices):
+    from .settings import argv_model, permission_mode, task_settings
+    from .holycow import assignment_problem, skill_file
+    rows, problems = [], []
+    problem = assignment_problem(task)
+    skill = task.get("skill")
+    rows.append({"label": "HolyCow skill", "text": skill or ("Not assigned" if problem else "Not required: non-software task")})
+    if problem:
+        return {"ready": False, "rows": rows, "problems": [problem]}
+    plan = start_choices(s, task, **choices)
+    argv, parent = effective_launch(**plan)
+    agent = agent_key(argv)
+    model, effort = argv_model(argv)
+    mode = permission_mode(argv)
+    rows.extend([{"label": "Agent", "text": agent}, {"label": "Model", "text": model or "CLI default"},
+                 {"label": "Permissions", "text": {"ask": "Ask me", "approve": "Approve for me", "full": "Full access", "read-only": "Read-only"}.get(mode, "CLI default or custom") }])
+    if effort:
+        rows.append({"label": "Effort", "text": effort})
+    if parent and argv != plan["argv"]:
+        rows.append({"label": "Permission source", "text": "Inherited from this space's Assistant"})
+    folder = task.get("worktree") or s.loc["folder"]
+    required = [(skill, agent)] if skill else []
+    if skill and review_limits(s, task)[0]:
+        reviewer = next(r["value"] for r in task_settings(s, task, plan["space"], argv) if r["label"] == "Reviewer")
+        required.append(("hc-review", reviewer["agent"]))
+        rows.append({"label": "Reviewer", "text": f"hc-review · {reviewer['agent']} · {reviewer.get('model') or 'CLI default'} · Read-only"})
+    for name, who in required:
+        try:
+            skill_file(name, folder, who, s.loc["folder"])
+        except Fail as e:
+            problems.append(str(e))
+    if task.get("state") in ("running", "ready", "done"):
+        problems.append("This task has already started. Open its chat to continue.")
+    return {"ready": not problems, "rows": rows, "problems": problems}
+
+
 def agent_name(s, task, suffix=None):
     """The agent's hc name: its id and title as hc allows names (hat-4-fix-login, at most 32),
     with -2, -3 while another live terminal has it (an agent taking over beside the old one)."""

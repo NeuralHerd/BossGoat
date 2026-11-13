@@ -612,10 +612,10 @@ async function actInner(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     if (!t) throw new Error("That task isn't here any more.");
     b = { ...b, ref: t.ref, folder: t.folder, machine: t.machine };
   }
-  else if ((b?.type === "evidence" || b?.type === "accept") && typeof b.task === "string") {
+  else if ((b?.type === "evidence" || b?.type === "accept" || b?.type === "task-preview" || b?.type === "task-start") && typeof b.task === "string") {
     const t = compat.taskOf(b.task);
     if (!t) throw new Error("That task isn't here any more.");
-    b = { ...b, ref: t.ref, folder: t.folder, machine: t.machine };
+    b = { ...b, ref: t.ref, folder: t.folder, machine: t.machine, space: t.space };
   }
   else if (b?.type === "read" && b.chats && typeof b.chats === "object") {
     for (const key of Object.keys(b.chats).slice(0, 20)) { const a = compat.addrOf(key); if (a) await act(hub, { type: "read", addr: a }, compat); }
@@ -657,6 +657,13 @@ async function actInner(hub: Hub, b: any, compat: Compat): Promise<unknown> {
       if (!t || t.labels?.["herdr.role"] !== "coordinator" || !(t.turn > 0)) return { ok: true };
       const r = await hc(["label", a, `${READ}=${t.turn}`]);
       return { ok: r.code === 0 };
+    }
+    case "task-preview": case "task-start": {
+      const { ref, folder, machine } = taskOf(b);
+      const r = await task([b.type === "task-preview" ? "preview" : "start", ref, ...(b.space ? ["--space", str(b.space, 160)] : [])], folder, machine);
+      const out = JSON.parse(r.stdout || "null");
+      if (r.code !== 0 || !out || out.error) throw new Error(out?.error || r.stderr.trim() || "Could not read or start this task.");
+      return out;
     }
     case "evidence": {
       const { ref, folder, machine } = taskOf(b);

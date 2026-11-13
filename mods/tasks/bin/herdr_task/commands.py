@@ -25,7 +25,7 @@ from .github import (already_merged, drop_branch, finish, gh, github, merged_her
 from .github import CHECKS_RUNNING as PR_CHECKS_RUNNING
 from .launch import (
     base_ref, brief, holycow_brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
-    inherit_permissions, own_path, parent_for, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
+    inherit_permissions, effective_launch, launch_preview, start_choices, own_path, parent_for, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
 )
 from .store import is_task_list, locate, open_store, prefixes_in_use, read_list, Store, store_files
 from .queues import after_refs, parse_after, queue_reason, set_after
@@ -260,12 +260,18 @@ def cmd_show(args):
     say(args, v, "\n".join(text))
 
 
+def cmd_preview(args):
+    with open_store(args, write=False) as s:
+        t = s.find(args.id)
+        result = launch_preview(s, t, space=args.space, agent=args.agent, argv=args.argv, parent=args.parent)
+    text = ["Task launch preview", *[f"{r['label']}: {r['text']}" for r in result["rows"]], *result["problems"]]
+    say(args, result, "\n".join(text))
+
+
 def begin(s, t, argv, space, parent=None, custom=False):
     """Starts the task's first agent. Returns its record."""
     holycow_brief(s, t, space, argv)
-    parent = parent_for(parent, space)
-    if not custom and not (t.get("queue") or {}).get("custom"):
-        argv = inherit_permissions(argv, parent)
+    argv, parent = effective_launch(argv, space, parent, custom or bool((t.get("queue") or {}).get("custom")))
     t["state"], t["started"] = "running", now()
     # Its brief teaches `reviewed`: ready waits for a review of its final commit (review_refusal).
     t["review_gate"] = True
@@ -295,12 +301,8 @@ def cmd_start(args):
         elif args.worktree and worktrees_on(s):
             t["mode"] = "worktree"
         set_branch(s, t, getattr(args, "branch", None))
-        q = t.get("queue") or {}
-        space = bare(args.space) if args.space else (q.get("space") or default_space())
-        argv = agent_argv(None, args.argv) if args.argv else worker_argv(s, t, space, args.agent) if args.agent else \
-            (q.get("argv") or worker_argv(s, t, space))
-        parent = args.parent or q.get("parent")
-        plan = {"argv": argv, "space": space, "parent": parent, **({"custom": True} if args.argv else {})}
+        plan = start_choices(s, t, space=args.space, agent=args.agent, argv=args.argv, parent=args.parent)
+        argv, space, parent = plan["argv"], plan["space"], plan["parent"]
         at = scheduled_at(args)
         if at:
             # start --at / --in: it starts by itself then, as this start would now.

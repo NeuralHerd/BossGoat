@@ -116,6 +116,8 @@ export class PanelHost {
     this.swapping = false;
     this.rec = null;       // the shown worker's task record (its list file's entry), or null
     this.accepting = false;
+    this.previewLoading = false;
+    this.starting = false;
     this.ticks = 0;
   }
 
@@ -150,7 +152,58 @@ export class PanelHost {
       if (JSON.stringify(w) !== JSON.stringify(shared("tasks.thread.where") ?? null)) setShared("tasks.thread.where", w);
     }
     if (JSON.stringify(rec) !== JSON.stringify(this.rec)) { this.rec = rec; cx.notify(); }
+    const last = rec?.agents?.[rec.agents.length - 1];
+    if (this.head && !addr && rec?.started && last?.address) {
+      setShared("tasks.thread", { ...cur, terminal: k.machine && !last.address.includes("/") ? `${k.machine}/${last.address}` : last.address,
+        log: last.log ? { path: last.log, kind: last.agent ?? null } : null, note: null, at: Date.now() });
+    }
+    if (this.head && !addr && rec && !rec.started && Date.now() - (this.previewAt || 0) > 10000) cx.spawn(cx => this.loadPreview(cx));
     if (this.head && rec && find(layout(), ARTIFACTS) && addonOn("artifacts")) this.loadArts(rec, addr, cx);
+  }
+
+  async loadPreview(cx) {
+    const cur = this.cur, k = cur?.key;
+    if (!k || cur.terminal || this.previewLoading) return;
+    this.previewLoading = true;
+    this.previewAt = Date.now();
+    setShared("tasks.thread.preview", { key: wantId(cur), result: null });
+    cx.notify();
+    try {
+      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, [...(k.machine ? ["--on", k.machine] : []), "preview", String(k.id), "--folder", k.folder, ...(k.space ? ["--space", k.space] : []), "--json"]);
+      const result = JSON.parse(r.stdout || "null");
+      if (r.code !== 0 || !result || result.error) throw new Error(result?.error || r.stderr || "Could not read launch settings.");
+      if (this.cur === cur) setShared("tasks.thread.preview", { key: wantId(cur), result });
+    } catch (e) {
+      if (this.cur === cur) setShared("tasks.thread.preview", { key: wantId(cur), result: { ready: false, rows: [], problems: [String(e.message || e)] } });
+    } finally { this.previewLoading = false; cx.notify(); }
+  }
+
+  async startTask(cx) {
+    const cur = this.cur, k = cur?.key;
+    if (!k || this.starting) return;
+    this.starting = true;
+    cx.notify();
+    try {
+      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, [...(k.machine ? ["--on", k.machine] : []), "start", String(k.id), "--folder", k.folder, ...(k.space ? ["--space", k.space] : []), "--json"]);
+      const out = JSON.parse(r.stdout || "null");
+      if (r.code !== 0 || !out || out.error) throw new Error(out?.error || r.stderr || "Task did not start.");
+      if (this.cur === cur) setShared("tasks.thread", { ...cur, terminal: out.terminal ? (k.machine && !out.terminal.includes("/") ? `${k.machine}/${out.terminal}` : out.terminal) : null,
+        note: out.reason ? `Queued: ${out.reason}` : null, at: Date.now() });
+    } catch (e) { toast({ level: "error", title: "Task did not start", body: String(e.message || e) }); }
+    finally { this.starting = false; cx.notify(); }
+  }
+
+  previewCard(cx) {
+    const current = shared("tasks.thread.preview");
+    const p = current?.key === wantId(this.cur) ? current.result : null;
+    return v_flex().w_full().gap(10).p(16).rounded(8).bg("#ffffff").text_color("#1d1d1f").border_1().border_color("#1d1d1f21")
+      .child(div().font_semibold().child("Task launch preview"))
+      .children((p?.rows ?? []).map(r => div().text_size(13).child(`${r.label}: ${r.text}`)))
+      .children((p?.problems ?? []).map(message => div().text_size(13).text_color("#b42318").child(message)))
+      .when(!p, el => el.child(div().child("Checking launch settings…")))
+      .child(h_flex().gap(8)
+        .child(button("task-preview-refresh", "Check again", { disabled: this.previewLoading, onClick: (_, cx) => cx.spawn(cx => this.loadPreview(cx)) }))
+        .child(button("task-preview-start", this.starting ? "Starting…" : "Start task", { disabled: !p?.ready || this.previewLoading || this.starting, onClick: (_, cx) => cx.spawn(cx => this.startTask(cx)) })));
   }
 
   // Its artifacts (core/task-artifacts.js, as the web's Artifacts tab finds them): its folder's list (herdr-artifact,
@@ -213,6 +266,7 @@ export class PanelHost {
     this.cur = want;
     this.rec = null;
     this.loadTask(want?.terminal, cx);
+    if (want?.key && !want.terminal) cx.spawn(cx => this.loadPreview(cx));
     if (want?.terminal) this.entity = cx.new(this.Chat, { inner: true, thread: true, terminal: want.terminal, task: want.task, title: want.title,
       log: want.log ?? null, key: want.key ?? null });
     this.swapping = false;
@@ -298,7 +352,9 @@ export class PanelHost {
     return this.entity
       ? v_flex().id("task-thread").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13).child(this.entity)
       : v_flex().id("task-thread").size_full().items_center().justify_center().px(18).bg(t.background).text_size(TEXT.label).text_color(t.dim)
-        .child(want?.note ?? (want ? "Opening…" : "Pick a task to see its chat."));
+        .gap(12).overflow_y_scroll()
+        .child(want?.note ?? (want ? "Opening…" : "Pick a task to see its chat."))
+        .when(Boolean(want?.key && !want.terminal), el => el.child(this.previewCard(cx)));
   }
 
   // The worker's report (herdr-task status) or a provider retry's line, under the title (as its
