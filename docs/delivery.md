@@ -52,6 +52,12 @@ old success or remove a gate. Missing artifacts or uncertain dependency coverage
 require broader validation. Follow HolyCow's delivery reference for the shared
 method; keep dbt commands and acceptance rules in the analytics repository.
 
+For data comparisons, carry the captured input epoch and native snapshot/clone
+receipts in the existing handoff. Both sides must use coherent frozen inputs;
+event-time filters alone do not exclude late arrivals. Preserve the distinction
+between repeatable comparison evidence and fresh production parity. Keep the
+implementation in the project and the shared method in HolyCow.
+
 Use the configured review owner and rounds. Keep findings and their dispositions
 with the handoff; starting a replacement worker does not reset unresolved findings.
 If the task includes deployment, verify the live result before describing that
