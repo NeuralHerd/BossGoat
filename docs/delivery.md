@@ -58,6 +58,14 @@ event-time filters alone do not exclude late arrivals. Preserve the distinction
 between repeatable comparison evidence and fresh production parity. Keep the
 implementation in the project and the shared method in HolyCow.
 
+When waiting on production work, carry the native job names, statuses and start
+times, the required execution window and staging expiry in that same handoff.
+Recheck a completed regular refresh before repeating a proposed repair. Preserve
+the project's maintenance authority and queued code origins; a waiting task does
+not authorize canceling or rewriting jobs to manufacture an idle gate. For source
+captures, retain the actual per-source boundaries when they are not one atomic
+snapshot. HolyCow's delivery reference owns the shared method for these cases.
+
 Use the configured review owner and rounds. Keep findings and their dispositions
 with the handoff; starting a replacement worker does not reset unresolved findings.
 If the task includes deployment, verify the live result before describing that
