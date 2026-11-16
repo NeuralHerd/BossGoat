@@ -4329,7 +4329,8 @@ export default class Chat extends View {
     const word = c.muted && c.phase !== "speaking" ? "Muted"
       : { connecting: "Connecting", listening: "Listening", thinking: "Thinking", speaking: "Speaking" }[c.phase] ?? "Connecting";
     return div().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(8).child(div().id("chat-call-box").w_full()
-      .rounded(16).border_1().border_color(t.input).bg(t.background)
+      .rounded(16).border(t.wallpaper ? 0 : 1).border_color(t.input).bg(t.composerBackground ?? t.background)
+      .when(t.wallpaper, el => el.shadow_sm().hover(s => s.bg(t.composerActiveBackground)))
       .track_focus(this.callFocus)
       .on_key_down((e, cx) => {
         const m = e.modifiers ?? {};
@@ -4358,6 +4359,9 @@ export default class Chat extends View {
       .child(h_flex().w_full().h(36).px(12).gap(8).items_center().rounded(10).border_1().border_color(t.border)
         .text_size(12.5).text_color(t.dim).child(div().size(6).flex_none().rounded(3).bg(t.dim)).child(div().flex_1().child(WORDS.ended))
         .when(Boolean(this.taskKey), (el) => el.child(this.button("chat-resume", this.resuming ? WORDS.resuming : "Resume",null, "primary", t, (cx) => this.resumeTask(cx)))));
+    const glass = Boolean(t.wallpaper);
+    const background = t.composerBackground ?? t.background;
+    const activeBackground = t.composerActiveBackground ?? background;
     // Herdr draws the native caret from its own theme, independently of the chat wallpaper.
     t = theme();
     // An open card, or the agent's own dialog in its terminal, doesn't lock the box: words
@@ -4370,7 +4374,7 @@ export default class Chat extends View {
     const recallable = !list.length && (!this.box.value() || this.recall >= 0);
     const take = (fn) => (_e, cx) => { fn(cx); cx.stop_propagation(); cx.notify(); };
     const sel = Math.min(this.slashSel, Math.max(0, list.length - 1));
-    return div().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(8).child(v_flex().id("chat-composer").w_full().rounded(16).border_1().text_color(t.foreground)
+    return div().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(8).child(v_flex().id("chat-composer").w_full().rounded(16).border(glass ? 0 : 1).text_color(t.foreground)
       // Esc stops a working agent while the box is empty and nothing is open over it.
       .key_context([list.length ? "chat_slash" : recallable ? "chat_recall" : "chat_composer",
         st === "working" && !list.length && !this.box.value().trim() && !this.quote ? "chat_stop" : null].filter(Boolean).join(" "))
@@ -4404,7 +4408,9 @@ export default class Chat extends View {
       .on_drop((e, cx) => { this.addFiles(attach.paths(e.paths ?? [])); this.saveSoon(cx); this.box.focus(); cx.notify(); })
       // Where the box is in the window, for a typed /model's picker (modelCommand()).
       .on_mouse_move((e) => { if (e.bounds) this.composerAt = e.bounds; })
-      .border_color(this.focused ? t.accent : t.input).bg(t.background)
+      .when(!glass, el => el.border_color(this.focused ? t.accent : t.input))
+      .bg(glass && this.focused ? activeBackground : background)
+      .when(glass, el => el.shadow_sm().when(this.focused, s => s.shadow_md()).hover(s => s.bg(activeBackground)))
       .child(this.healthCard(t, cx) ?? div())
       .child(this.slashList(t, list) ?? div())
       .child(this.tiles(t) ?? div())

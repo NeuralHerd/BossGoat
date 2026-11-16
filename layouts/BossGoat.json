@@ -112,12 +112,12 @@
                       },
                       "background": "#f9f9fa00",
                       "border": {
-                        "width": 1,
+                        "width": 0,
                         "color": "border"
                       },
                       "focus": {
-                        "width": 1,
-                        "color": "accent"
+                        "width": 0,
+                        "color": "border"
                       },
                       "radius": 10,
                       "gap": 8,
@@ -327,6 +327,7 @@
         {
           "id": "status",
           "type": "block",
+          "hidden": true,
           "content": {
             "mod": "workspace-status-chat"
           },

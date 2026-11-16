@@ -145,16 +145,24 @@ test("light mode hides images without losing the saved dark-mode wallpaper", () 
 });
 
 
-test("one window wallpaper continues behind the sidebar without opaque chrome or double tint", () => {
+test("one window wallpaper continues behind the sidebar and header without double tint", () => {
   const tree = { id: "root", children: [
     { id: "sidebar", background: "chrome", children: [{ id: "brand" }, { id: "spaces" }, { id: "sidebar-footer" }] },
-    { id: "work", children: [{ id: "main", content: { pane: { background: "background" } } }] },
+    { id: "work", children: [
+      { id: "main", content: { pane: { background: "background" } } },
+      { id: "tabs", background: "chrome", size: { px: 42 } },
+    ] },
   ] };
   for (const transparency of [0, 50, 100]) {
     const result = terminalWallpaper(tree, wallpaper({ ...chosen, transparency }), "#111413");
     const sidebar = result.children[0], main = result.children[1].children[0];
     expect(result.background).toEqual({ image: chosen.path, fit: "cover" });
     expect(sidebar.background).toBe(main.background);
+    for (const node of result.children[1].children.slice(1)) {
+      expect(node.background).toBe(sidebar.background);
+      expect(node.size).toEqual(tree.children[1].children.find((before) => before.id === node.id).size);
+    }
+    expect(terminalWallpaper(result, wallpaper({ ...chosen, transparency }), "#111413")).toEqual(result);
     expect(main.content.pane.background).toBe("#00000000");
     expect(sidebar.children).toEqual(tree.children[0].children.map((node) => ({ ...node, background: "#00000000" })));
   }

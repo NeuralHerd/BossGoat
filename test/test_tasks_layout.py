@@ -129,6 +129,43 @@ class TasksLayout(unittest.TestCase):
         self.assertEqual(I.migrate_tasks_layout(raw, SHIPPED), raw)
         self.assertEqual(I.migrate_tasks_layout(SHIPPED, SHIPPED), SHIPPED)
 
+    def test_existing_footer_moves_to_header_info_without_losing_its_customization(self):
+        root = json.loads(SHIPPED)
+        status = nodes(root)["status"]
+        status.pop("hidden")
+        status["size"] = {"px": 34}
+        root["background"] = {"image": "my-wallpaper.png"}
+        migrated = self.migrate(root)
+        self.assertEqual(nodes(migrated)["status"], {**status, "hidden": True})
+        self.assertEqual(migrated["background"], root["background"])
+        self.assertEqual(I.migrate_tasks_layout(encode(migrated), SHIPPED), encode(migrated))
+
+    def test_custom_footer_and_explicit_visibility_are_preserved(self):
+        for custom in ({"hidden": False}, {"content": {"mod": "my-status"}}):
+            root = json.loads(SHIPPED)
+            status = nodes(root)["status"]
+            status.pop("hidden")
+            status.update(custom)
+            raw = encode(root)
+            self.assertEqual(I.migrate_tasks_layout(raw, SHIPPED), raw)
+
+    def test_old_default_pane_outline_is_removed_without_resetting_other_styles(self):
+        root = json.loads(SHIPPED)
+        pane = nodes(root)["main"]["content"]["pane"]
+        pane.update(border={"width": 1, "color": "border"}, focus={"width": 1, "color": "accent"}, radius=17, gap=12)
+        migrated = self.migrate(root)
+        result = nodes(migrated)["main"]["content"]["pane"]
+        self.assertEqual(result, {**pane, "border": {"width": 0, "color": "border"},
+                                 "focus": {"width": 0, "color": "border"}})
+        self.assertEqual(I.migrate_tasks_layout(encode(migrated), SHIPPED), encode(migrated))
+
+    def test_custom_pane_outlines_are_preserved(self):
+        root = json.loads(SHIPPED)
+        pane = nodes(root)["main"]["content"]["pane"]
+        pane.update(border={"width": 2, "color": "#444444"}, focus={"width": 2, "color": "#666666"})
+        raw = encode(root)
+        self.assertEqual(I.migrate_tasks_layout(raw, SHIPPED), raw)
+
     def test_unsupported_layouts_fail_with_an_actionable_error(self):
         for change in (lambda n: n["sidebar-lists"].update(type="block"),
                        lambda n: n["work-body"]["children"].remove(n["main"]),
@@ -159,7 +196,7 @@ class TasksLayout(unittest.TestCase):
             self.assertIn("migrate", preview)
             self.assertEqual(tree(tmp), before, "preview must not write the layout or saved clicks")
             output = run("update", "--root", tmp, "--yes").stdout
-            self.assertIn("migrated BossGoat Tasks", output)
+            self.assertIn("migrated BossGoat layout", output)
             self.assert_sidebar(json.loads(layout.read_bytes()))
             self.assertEqual(json.loads(layout.read_bytes())["background"], old["background"])
             self.assertTrue(any(p.read_bytes() == original for p in (root / I.APP / ".shepherdr-backup").rglob("BossGoat.json")))
@@ -167,7 +204,7 @@ class TasksLayout(unittest.TestCase):
             self.assertEqual((root / I.APP / "keys.json").read_bytes(), keys)
             migrated = layout.read_bytes()
             second = run("update", "--root", tmp, "--yes").stdout
-            self.assertNotIn("migrated BossGoat Tasks", second)
+            self.assertNotIn("migrated BossGoat layout", second)
             self.assertEqual(layout.read_bytes(), migrated)
             run("doctor", "--root", tmp)
             # Recording a merged layout as the pristine default would let the next release overwrite it.

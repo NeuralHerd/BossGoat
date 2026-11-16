@@ -11,5 +11,6 @@ export function wallpaperLayer(value, width, height) {
 }
 export function wallpaperTheme(t, value) {
   // Native Markdown and inputs use the host palette even inside a locally coloured parent.
-  return value ? { ...t, wallpaper: true } : t;
+  return value ? { ...t, wallpaper: true, composerBackground: `${t.background.slice(0, 7)}b3`,
+    composerActiveBackground: `${t.background.slice(0, 7)}d1` } : t;
 }

@@ -236,7 +236,7 @@ export default class Pane extends View {
       .px(10)
       .gap(8)
       .items_center()
-      .bg(t.background)
+      .bg(shared("layout") === "BossGoat" ? `${t.background.slice(0, 7)}${self.focused ? "59" : "33"}` : t.background)
       .border_b(1)
       .border_color(t.border)
       .text_size(TEXT.label)

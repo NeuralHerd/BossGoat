@@ -13,7 +13,7 @@ if CommandLine.arguments.count > 2 {
     source = URL(fileURLWithPath: CommandLine.arguments[2])
 } else {
     let app = NSApplication.shared
-    app.setActivationPolicy(.regular)
+    app.setActivationPolicy(.accessory)
     app.appearance = NSAppearance(named: .aqua)
     let menu = NSMenu()
     let appItem = NSMenuItem()
@@ -29,13 +29,20 @@ if CommandLine.arguments.count > 2 {
     menu.addItem(item)
     app.mainMenu = menu
     app.finishLaunching()
-    app.activate(ignoringOtherApps: true)
     let panel = NSOpenPanel()
+    // The helper must join BossGoat's fullscreen Space before it takes focus.
+    panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+    if #available(macOS 13.0, *) {
+        panel.collectionBehavior.insert(.canJoinAllApplications)
+    }
+    panel.level = .modalPanel
     panel.title = "Choose a BossGoat wallpaper"
     panel.prompt = "Use image"
     panel.allowedContentTypes = [.png, .jpeg, .webP]
     panel.allowsMultipleSelection = false
     panel.canChooseDirectories = false
+    panel.makeKeyAndOrderFront(nil)
+    app.activate(ignoringOtherApps: true)
     if panel.runModal() == .OK { source = panel.url }
 }
 guard let source else { emit(["cancelled": true]); exit(0) }

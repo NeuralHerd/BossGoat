@@ -25,7 +25,7 @@ def mac_picker(root):
         (bundle / "Info.plist").write_bytes(plistlib.dumps({
             "CFBundleIdentifier": "org.neuralherd.bossgoat.wallpaper",
             "CFBundleName": "BossGoat Wallpaper", "CFBundleExecutable": binary.name,
-            "CFBundlePackageType": "APPL", "NSHighResolutionCapable": True,
+            "CFBundlePackageType": "APPL", "NSHighResolutionCapable": True, "LSUIElement": True,
         }))
         compiled = binary.with_suffix(".new")
         result = subprocess.run(["/usr/bin/swiftc", str(source), "-o", str(compiled)], capture_output=True, text=True)

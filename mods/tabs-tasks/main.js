@@ -135,6 +135,7 @@ export default class Tabs extends View {
     tickOnChange(cx);
     watchNewSpaces(spaces());
     const t = theme();
+    const chrome = shared("layout") === "BossGoat" ? "#00000000" : t.chrome;
     const space = spaces().find(p => p.active);
     // A coordinator's tab is pinned first.
     const shown = [...(space?.tabs ?? [])].sort((a, b) => isCoordinatorTab(b.id) - isCoordinatorTab(a.id));
@@ -157,7 +158,7 @@ export default class Tabs extends View {
       const name = tabName(c.name, program?.name);
       const active = c.active && !(tasksInMain() && taskViewShown());
       return h_flex().id(`tab-${c.id}`).h(H.sm).px(8).gap(6).rounded(RADIUS.control).items_center().flex_none().text_size(TEXT.body)
-        .border(1).border_color(active ? t.border : t.chrome).bg(active ? t.raised : t.chrome).text_color(active ? t.foreground : t.muted)
+        .border(1).border_color(active ? t.border : chrome).bg(active ? t.raised : chrome).text_color(active ? t.foreground : t.muted)
         .cursor_pointer().hover(s => s.bg(t.hover))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) renameTab(c); })
         .on_mouse_up("left", () => {
@@ -170,7 +171,7 @@ export default class Tabs extends View {
         .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).text_color(t.muted) : image(program.icon).size(14)))
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
         .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
-        .when(needs.get(c.id) > 0 || readies.get(c.id) > 0, el => el.child(countBadge(needs.get(c.id), readies.get(c.id), active ? t.raised : t.chrome)))
+        .when(needs.get(c.id) > 0 || readies.get(c.id) > 0, el => el.child(countBadge(needs.get(c.id), readies.get(c.id), active ? t.raised : chrome)))
         .when(!(needs.get(c.id) > 0 || readies.get(c.id) > 0) && (c.status === "blocked" || c.status === "done"), el => el.child(div().size(6).rounded(3).bg(t[c.status])))
         .when(c.active, el => el.child(div().id(`close-${c.id}`).cursor_pointer().text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); closeTab(c.id); }).child(svg("mods/pane/close.svg").size(12))));
     };
@@ -192,16 +193,16 @@ export default class Tabs extends View {
       const badge = need + ready;
       const on = panel && !panel.hidden && body?.active === id;
       return h_flex().id(`panel-${id}`).h(H.sm).pl(5).pr(roomy || on || badge ? 8 : 5).gap(5).flex_none().items_center().rounded(RADIUS.control)
-        .text_size(TEXT.label).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
+        .text_size(TEXT.label).bg(on ? t.selected : chrome).text_color(on ? t.foreground : t.muted)
         .cursor_pointer().hover(s => s.bg(on ? t.selected : t.hover).text_color(t.foreground)).on_mouse_down("left", stop)
         .on_click(() => {
           if (on) run("layout.hide", { id: "panel" });
           else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
         }).child(svg(icon).size(14).flex_none())
         .when(roomy || on, el => el.child(label))
-        .when(badge > 0, el => el.child(countBadge(need, ready, on ? t.selected : t.chrome)));
+        .when(badge > 0, el => el.child(countBadge(need, ready, on ? t.selected : chrome)));
     };
-    return h_flex().id("tabs-bar").size_full().min_w(0).px(10).pl(lightsPadding).gap(3).items_center().bg(t.chrome).border_b(1).border_color(t.border)
+    return h_flex().id("tabs-bar").size_full().min_w(0).px(10).pl(lightsPadding).gap(3).items_center().bg(chrome).border_b(1).border_color(t.border)
       .on_size_change((size, cx) => { this.width = size.width; cx.notify(); })
       .on_mouse_up("left", () => { this.pressed = null; })
       // The bar runs to the window's right edge: menus opened from it place their submenus by it.
@@ -213,6 +214,10 @@ export default class Tabs extends View {
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .when(enabled.includes("tasks"), el => el.child(panelButton("tasks", "Tasks", "mods/tasks/tasks.svg", [counts ? inboxCount() : 0, greens ? readyCount() : 0])))
       .when(enabled.includes("artifacts"), el => el.child(panelButton("artifacts", "Artifacts", "mods/artifacts/artifacts.svg")))
+      .child(button("workspace-info", svg("mods/tabs-tasks/info.svg").size(16), () => openOverlay({
+        mod: "workspace-status-chat", kind: "popup", at: "pointer", width: 300,
+        height: 112 + (space?.branch ? 32 : 0) + (inboxCount() > 0 ? 32 : 0), props: { info: true },
+      })).tooltip("Workspace info").accessibility_label("Workspace info"))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs-tasks/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs-tasks/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs-tasks/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));

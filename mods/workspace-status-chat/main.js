@@ -1,9 +1,9 @@
 // The status bar: the shown space's machine (as the sidebar names it) and branch, the red Needs-you
 // badge (the Tasks panel's count, inbox.js) when something needs the person, and the palette key.
-// No agent count: the Tasks panel shows the work.
+// Also opened from the header as a compact workspace-info menu.
 import { View, div, svg } from "gpui-kit";
-import { h_flex } from "gpui-base";
-import { theme, run, window, keys, shared } from "herdr";
+import { h_flex, v_flex } from "gpui-base";
+import { theme, run, window, keys, shared, props, closeOverlay } from "herdr";
 import { spaces, inRender } from "./live.js";
 import { count as needsYou } from "./inbox.js";
 import { countBadge, TEXT, RADIUS } from "./ui.js";
@@ -33,7 +33,15 @@ export default class WorkspaceStatus extends View {
     const t = theme();
     const space = spaces().find(s => s.active);
     const needs = needsYou();
-    const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(14)).child(text);
+    const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(14).flex_none()).child(div().min_w(0).truncate().child(text));
+    if (props()?.info) return v_flex().size_full().p(12).gap(8).bg(t.popover).text_size(TEXT.label).text_color(t.foreground)
+      .child(div().h(20).font_semibold().child("Workspace info"))
+      .child(label(space?.machine ? "server" : "monitor", machineName(space?.machine ?? null)).h(24))
+      .when(Boolean(space?.branch), el => el.child(label("branch", space.branch).h(24)))
+      .when(needs > 0, el => el.child(h_flex().h(24).gap(6).items_center().child(countBadge(needs, 0, t.popover)).child("Needs you")))
+      .child(h_flex().id("workspace-commands").h(28).px(6).items_center().rounded(RADIUS.control).cursor_pointer()
+        .text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
+        .on_click(() => { closeOverlay(); run("app.palette"); }).child(this.hint()));
     return h_flex().size_full().px(14).gap(16).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(TEXT.label).text_color(t.muted)
       .child(label(space?.machine ? "server" : "monitor", machineName(space?.machine ?? null)))
       .when(Boolean(space?.branch), el => el.child(label("branch", space.branch)))

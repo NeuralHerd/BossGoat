@@ -71,3 +71,23 @@ class Wallpaper(unittest.TestCase):
                 self.assertEqual(build.call_count, 1)
             info = wallpaper.plistlib.loads((Path(first).parents[1] / "Info.plist").read_bytes())
             self.assertEqual(info["CFBundleName"], "BossGoat Wallpaper")
+            self.assertTrue(info["LSUIElement"])
+
+    def test_update_replaces_cached_regular_app_with_an_accessory_picker(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            bundle = root / wallpaper.DIRECTORY / "BossGoat Wallpaper.app" / "Contents"
+            binary = bundle / "MacOS" / "BossGoatWallpaper"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"old picker")
+            (bundle / "source-version").write_text("old source")
+            (bundle / "Info.plist").write_bytes(wallpaper.plistlib.dumps({"LSUIElement": False}))
+            def compile(args, **kwargs):
+                Path(args[-1]).write_bytes(b"updated picker")
+                return subprocess.CompletedProcess(args, 0, "", "")
+            with patch.object(wallpaper.subprocess, "run", side_effect=compile) as build:
+                self.assertEqual(wallpaper.mac_picker(root), str(binary))
+                self.assertEqual(wallpaper.mac_picker(root), str(binary))
+                self.assertEqual(build.call_count, 1)
+            self.assertEqual(binary.read_bytes(), b"updated picker")
+            self.assertTrue(wallpaper.plistlib.loads((bundle / "Info.plist").read_bytes())["LSUIElement"])

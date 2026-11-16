@@ -44,7 +44,8 @@ The updater refuses dirty, detached or diverged source checkouts and never reset
 Updates migrate the Tasks list into the sidebar and task conversations into the main area, including
 customized BossGoat layouts. The installer moves existing nodes, backs up the old layout, and keeps
 wallpaper, panel styling, custom blocks, shortcuts and saved layout clicks. Herdr reloads the layout
-while it is open; no restart is required. An unsupported layout stops the update with a specific error
+while it is open; no restart is required. The standard footer is hidden; the header’s info icon opens
+computer and branch details and Commands. Custom footer blocks and explicit visibility choices are kept. An unsupported layout stops the update with a specific error
 instead of replacing it with the default. Repeated updates leave an already migrated layout alone.
 
 Other files use the existing installer’s backup and customization rules. From a terminal:

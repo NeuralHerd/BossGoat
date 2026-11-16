@@ -77,7 +77,7 @@ export function terminalWallpaper(tree, value, base = "#f9f9fa") {
       node.background = tint;
       if (node.content?.pane) node.content.pane.background = "#00000000";
     }
-    if (node.id === "sidebar") {
+    if (["sidebar", "tabs"].includes(node.id)) {
       node.background = tint;
     }
     if (["brand", "sidebar-lists", "spaces", "sidebar-footer"].includes(node.id)) node.background = "#00000000";

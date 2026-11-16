@@ -37,7 +37,7 @@ What goes where (each under --root, default your home):
 Never overwritten: a mod, layout or lib file that isn't ours (it refuses, naming each; --adopt backs
 them up and takes them over), a key you set (unless you say yes), a file you changed since the last
 install (the new copy goes beside it as <file>.new; a mod file Shepherdr changed too is replaced, yours backed up).
-BossGoat's Tasks layout is migrated in place, preserving custom nodes and appearance, with a backup first.
+BossGoat's layout is migrated in place, preserving custom nodes and appearance, with a backup first.
 Everything it replaces goes to
 .config/herdr-app/.shepherdr-backup/<time>/ first; uninstall puts it back. What it installed is
 recorded in .config/herdr-app/data/shepherdr/installed.json (a sha256 per file), so running it again
@@ -722,7 +722,21 @@ def migrate_tasks_layout(current, shipped):
         tree = json.loads(current)
         nodes = index(tree)
         defaults = index(json.loads(shipped))
+        status = nodes.get("status", (None,))[0]
+        hide_status = (status is not None and status.get("type") == "block"
+                       and isinstance(status.get("content"), dict)
+                       and status["content"].get("mod") == "workspace-status-chat"
+                       and "hidden" not in status)
+        if hide_status:
+            status["hidden"] = True
         sidebar, work, main = [nodes[key][0] for key in ("sidebar-lists", "work-body", "main")]
+        appearance_changed = hide_status
+        pane = main.get("content", {}).get("pane")
+        if isinstance(pane, dict):
+            for key, color in (("border", "border"), ("focus", "accent")):
+                if pane.get(key) == {"width": 1, "color": color}:
+                    pane[key] = {"width": 0, "color": "border"}
+                    appearance_changed = True
         tasks, task_parent = nodes.get("tasks", (None, None))
         listing, list_parent = nodes.get("tasks-list", (None, None))
         main_parent = nodes["main"][1]
@@ -731,7 +745,7 @@ def migrate_tasks_layout(current, shipped):
         if tasks is not None and tasks.get("type") != "stack":
             raise ValueError("tasks is not a stack")
         if tasks is not None and task_parent is work and main_parent is tasks and list_parent is sidebar:
-            return current
+            return (json.dumps(tree, indent=2, ensure_ascii=False) + "\n").encode() if appearance_changed else current
         if main_parent is not work and (tasks is None or main_parent is not tasks):
             raise ValueError("main is outside work-body and tasks")
         if tasks is not None and task_parent is not work and task_parent is not nodes.get("panel-body", (None,))[0]:
@@ -1279,7 +1293,7 @@ def cmd_install(a, update=False):
             atomic_write(r.p(rel), migrated, mode)
             if fsha(rel, migrated) != fsha(rel, data):
                 atomic_write(r.p(rel) + ".new", data, mode)
-            r.notes.append("migrated BossGoat Tasks into the sidebar; customizations and saved layout clicks kept. "
+            r.notes.append("migrated BossGoat layout; customizations and saved layout clicks kept. "
                            "Herdr reloads the layout automatically.")
         elif how == "keep":
             atomic_write(r.p(rel) + ".new", data, mode)
