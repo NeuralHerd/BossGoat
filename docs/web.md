@@ -50,8 +50,8 @@ connection it came on). A page from anywhere else can't change anything: writes 
   `herdr-artifact convert` turns an older drawn artifact into a recipe.
 - The task browser: Kitty in the window, a live view of the same browser on the web.
 - Voice calls and dictation: the machine's microphone in the window, the phone's on the web, through the service
-  (the same ElevenLabs voice agent, `core/voice.js`; ElevenLabs speech to text, Scribe, for dictation, with the
-  same key). You can talk over the agent to interrupt it: the browser cancels its echo on the web, and on a Mac
+  (ElevenLabs, Codex with ChatGPT sign-in, or Claude/Cursor with local speech; [setup](voice.md)). Dictation uses ElevenLabs
+  speech to text, Scribe. You can talk over the agent to interrupt it: the browser cancels its echo on the web, and on a Mac
   the window's call runs the mic and speaker in one helper with Apple's echo cancellation (`herdr-audio call`,
   `mods/chat/mac-audio.swift`; other apps' sound dips slightly meanwhile). Where that can't run (Linux, no voice
   processing, the helper failing), the call goes on with the mic hushed while the agent speaks (`mods/chat/audio.ts`

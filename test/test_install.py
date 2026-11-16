@@ -617,7 +617,8 @@ class Install(unittest.TestCase):
             marker = sh.service_file(root, "restart-when-free")
             sh.calls_on = lambda r: 1
             sh.install_service(r, {}, True)
-            self.assertEqual(ran, [])
+            self.assertEqual(ran, [["/usr/bin/bun", "install", "--production", "--frozen-lockfile"]])
+            ran.clear()
             self.assertTrue(os.path.isfile(marker))
             self.assertTrue(any("voice call" in n for n in r.notes))
             os.remove(marker)

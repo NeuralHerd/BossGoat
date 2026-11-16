@@ -59,6 +59,7 @@ import { cleanCommand } from "./core/clean-env.js";
 import { assistantContext, hasAssistantContext } from "./core/assistant-context.js";
 import * as choices from "./settings.js";
 import { Dictation, BUN_PATH, warmAudio } from "./dictate.js";
+import { voiceProvider } from "./core/voice-provider.js";
 
 // Writing down after Done this long says it's taking longer than usual (SHEP-63).
 const DICT_SLOW = 5000;
@@ -2555,19 +2556,23 @@ export default class Chat extends View {
 
   async runCall(cx) {
     const dir = this.callDir;
-    const keyFile = `${appHome()}/secrets/elevenlabs.env`;
-    const ok = await exec("sh", ["-c", 'grep -q "^[[:space:]]*\\(export[[:space:]]*\\)\\{0,1\\}ELEVENLABS_API_KEY=." "$1" 2>/dev/null && echo yes', "x", keyFile]);
-    // Or kept in Settings › Secrets (Everywhere), here or on the machine that keeps the secrets: voice.ts reads it
-    // itself. The help only when that machine truly has none: one that can't be asked now (entries() fails) lets the
-    // call try, and voice.ts says it can't reach it.
-    const list = ok.stdout.trim() === "yes" ? null : await secrets.entries().catch(() => null);
-    const kept = !list || list.some((e) => e.name === "ELEVENLABS_API_KEY" && e.scope === "everywhere");
-    if (!kept) {
-      this.call = null;
-      this.callHelp = true;
-      this.callShared();
-      cx.notify();
-      return;
+    let provider;
+    try { provider = voiceProvider(JSON.parse(await readTextFile((await dirsReady()).settings) || "{}")); } catch {}
+    if (provider === "elevenlabs") {
+      const keyFile = `${appHome()}/secrets/elevenlabs.env`;
+      const ok = await exec("sh", ["-c", 'grep -q "^[[:space:]]*\\(export[[:space:]]*\\)\\{0,1\\}ELEVENLABS_API_KEY=." "$1" 2>/dev/null && echo yes', "x", keyFile]);
+      // Or kept in Settings › Secrets (Everywhere), here or on the machine that keeps the secrets: voice.ts reads it
+      // itself. The help only when that machine truly has none: one that can't be asked now (entries() fails) lets the
+      // call try, and voice.ts says it can't reach it.
+      const list = ok.stdout.trim() === "yes" ? null : await secrets.entries().catch(() => null);
+      const kept = !list || list.some((e) => e.name === "ELEVENLABS_API_KEY" && e.scope === "everywhere");
+      if (!kept) {
+        this.call = null;
+        this.callHelp = true;
+        this.callShared();
+        cx.notify();
+        return;
+      }
     }
     this.callHelp = false;
     // the voice agent's screen tool reads and acts on this window (call-screen.js): refs start again each call

@@ -169,7 +169,7 @@ test("Agents and Tasks say the window's words: the model button, Other CLI, Must
   s.start();
   s.choices = C.choicesFrom({ claude: { model: "opus[1m]", effort: "high", per: {} }, codex: { models: [{ id: "gpt-5", label: "GPT-5", efforts: ["low", "high"] }] } });
   const agents = s.sections(null).find((x) => x.name === "Agents" && x.level === "all")!;
-  expect(agents.rows.map((r) => r.label)).toEqual(["Assistant", "Workers", "Reviewer", "Backup agent", "Reactions", "Suggested next message", "Feedback offers", "Feedback repo", "Ask for a GitHub star"]);
+  expect(agents.rows.map((r) => r.label)).toEqual(["Assistant", "Workers", "Reviewer", "Voice calls", "Backup agent", "Reactions", "Suggested next message", "Feedback offers", "Feedback repo", "Ask for a GitHub star"]);
   expect(agents.rows[0].value).toBe("Opus 5.5 · 1M · High");
   expect(agents.rows[2]).toMatchObject({ value: "Other CLI (Codex)", agent: { unset: true, other: false } });
   const tasks = s.sections(null).find((x) => x.name === "Tasks" && x.level === "all")!;
@@ -322,4 +322,29 @@ test("shared permission choices persist for roles and HolyCow without changing t
       expect(JSON.parse(readFileSync(file, "utf8")).everywhere.holycow["hc-review"].perm).toBe(agent === "claude" ? "plan" : "read-only");
     }
   }
+});
+
+
+test("voice provider selection is explicit, global, and preserves unrelated settings", () => {
+  const s = new Settings();
+  s.start();
+  const before = JSON.parse(readFileSync(file, "utf8"));
+  s.set("voice.provider", "Codex (experimental)");
+  const f = JSON.parse(readFileSync(file, "utf8"));
+  expect(f.everywhere.voice.provider).toBe("codex");
+  expect(f.spaces).toEqual(before.spaces);
+  expect(f.everywhere.agents).toEqual(before.everywhere.agents);
+  const agents = s.sections(null).find((x) => x.name === "Agents" && x.level === "all")!;
+  expect(agents.rows.find((r) => r.key === "voice.provider")?.value).toBe("Codex (experimental)");
+  expect(() => s.set("voice.provider", "Anything")).toThrow();
+  expect(() => s.set("voice.provider", "Codex (experimental)", "sp2", { id: "sp2", name: "web", machine: null })).toThrow();
+  for (const [id, label] of [["claude", "Claude (local speech)"], ["cursor", "Cursor (local speech)"], ["codex", "Codex (experimental)"]]) {
+    s.set("voice.provider", label);
+    const next = JSON.parse(readFileSync(file, "utf8"));
+    expect(next.everywhere.voice.provider).toBe(id);
+    expect(next.spaces).toEqual(before.spaces);
+    expect(s.sections(null).find((x) => x.name === "Agents" && x.level === "all")!.rows.find((r) => r.key === "voice.provider")?.value).toBe(label);
+  }
+  s.set("voice.provider", "ElevenLabs");
+  expect(JSON.parse(readFileSync(file, "utf8")).everywhere.voice?.provider).toBeUndefined();
 });

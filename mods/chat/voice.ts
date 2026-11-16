@@ -30,6 +30,11 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { API, opening, replyLine, statusLine, whereLine, apiError, ensureAgent, agentFile, navWords, toolWords, turnGate, hangUpGuard, closeWords, chimePcm, HUNG_UP, REFUSED } from "./core/voice.js";
 import { screenWords } from "./core/screen.js";
+import { CodexVoiceSocket } from "./codex-voice.js";
+import { LocalVoiceSocket } from "./local-voice.js";
+import * as localVoice from "./core/local-voice.js";
+import { TOOLS } from "./core/voice.js";
+import { voiceProvider } from "./core/voice-provider.js";
 import { SECRETS, keyFor, envFile, shepPaths } from "./key.ts";
 import { audio, callAudio, ended as audioEnded, type Audio, type CallSound } from "./audio.ts";
 
@@ -358,16 +363,25 @@ async function main() {
     if (why) return end(why);
   }
   if (ended) return;
-  const k = await keyFor();
-  if ("error" in k) return end(k.error);
-  const key = k.key;
-  const id = await agentId(key, k.agent);
-  const { signed_url } = await api(`/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(id)}`, key) as { signed_url: string };
-  const url = new URL(signed_url);
-  if (url.protocol !== "wss:" || !url.hostname.endsWith("elevenlabs.io")) throw new Error("ElevenLabs gave an unexpected address.");
-  if (ended) return;
-  ws = new WebSocket(signed_url);
   const here = (await serviceTool("look", { what: "here" }))?.result ?? "";
+  if (ended) return;
+  let settings = {};
+  try { settings = JSON.parse(readFileSync(shepPaths().settings, "utf8")); }
+  catch (e: any) { if (e?.code !== "ENOENT") return end("Voice settings could not be read. Check BossGoat settings and try again."); }
+  const provider = voiceProvider(settings);
+  if (provider === "codex") ws = new CodexVoiceSocket(TOOLS) as unknown as WebSocket;
+  else if (provider === "claude" || provider === "cursor") ws = new LocalVoiceSocket(provider, TOOLS, localVoice) as unknown as WebSocket;
+  else {
+    const k = await keyFor();
+    if ("error" in k) return end(k.error);
+    const key = k.key;
+    const id = await agentId(key, k.agent);
+    const { signed_url } = await api(`/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(id)}`, key) as { signed_url: string };
+    const url = new URL(signed_url);
+    if (url.protocol !== "wss:" || !url.hostname.endsWith("elevenlabs.io")) throw new Error("ElevenLabs gave an unexpected address.");
+    if (ended) return;
+    ws = new WebSocket(signed_url);
+  }
   saidWhere = JSON.stringify(where());
   ws.onopen = () => {
     ws!.send(JSON.stringify(opening(here)));

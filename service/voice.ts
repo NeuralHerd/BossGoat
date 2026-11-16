@@ -9,6 +9,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { CodexVoiceSocket } from "../lib/codex-voice.js";
+import { LocalVoiceSocket } from "../lib/local-voice.js";
+import * as localVoice from "../core/local-voice.js";
+import { TOOLS } from "../core/voice.js";
+import { voiceProvider } from "../core/voice-provider.js";
+import { readSettings } from "./settings.ts";
 import type { Hub } from "./hub.ts";
 import { HOME, appHome, where, writable } from "./paths.ts";
 import * as V from "../core/voice.js";
@@ -193,9 +199,12 @@ export function voiceCall(hub: Hub, deps: CallDeps, first: Page) {
   }, 1000);
 
   (async () => {
-    const signed_url = await (deps.dial ?? (() => dialElevenLabs(hub)))();
+    const provider = deps.dial ? "elevenlabs" : voiceProvider(readSettings());
+    const signed_url = provider === "elevenlabs" ? await (deps.dial ?? (() => dialElevenLabs(hub)))() : null;
     if (ended) return;
-    ws = new WebSocket(signed_url);
+    ws = provider === "codex" ? new CodexVoiceSocket(TOOLS) as unknown as WebSocket
+      : provider === "claude" || provider === "cursor" ? new LocalVoiceSocket(provider, TOOLS, localVoice) as unknown as WebSocket
+      : new WebSocket(signed_url!);
     ws.onopen = () => { said = here(); toVoice(opening(said)); };
     ws.onmessage = async (e) => {
       if (ended) return;

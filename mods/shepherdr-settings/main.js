@@ -49,6 +49,8 @@ import { SECTIONS as SHARED_SECTIONS, ROLES, HOLYCOW, NOTES, MERGE, MUST_FIX, RO
   EVERYWHERE, CHANGED_HERE, RESET, EDIT_INSTRUCTIONS, USE_OTHER_CLI, LOADING_AGENTS, SAVED, sameAs as sameAsWords,
   spacesOwn, otherCliWords, backupProblem, notifyMachineAbout, machineLabel, TASK_ROWS, LEVEL } from "./core/settings.js";
 
+import { VOICE, voiceProvider } from "./core/voice-provider.js";
+
 const SECTIONS = [...SHARED_SECTIONS.flatMap((s) => s.id === "window" ? [APPEARANCE, s] : [s]), UPDATES];
 
 const I = (name) => `mods/shepherdr-settings/${name}.svg`;
@@ -508,6 +510,8 @@ export default class ShepherdrSettings extends View {
     return v_flex()
       .child(this.title(t, page("agents")))
       .children(ROLES.map((r) => this.roleRow(t, r, cx)))
+      .when(!this.scope, (el) => el.child(this.row(t, VOICE.title, VOICE.about, null, null,
+        segmented("voice-provider", VOICE.choices, voiceProvider(this.cfg), (v, _e, cx) => this.set("voice", "provider", v, cx)))))
       .child(this.backupRow(t))
       .child(this.reactionsRow(t))
       .child(feedbackRow(this, t))

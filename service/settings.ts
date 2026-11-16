@@ -7,6 +7,7 @@ import { existsSync, readFileSync, renameSync, watch, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { HOME, settingsFile, where, writableSettings } from "./paths.ts";
 import * as C from "../core/settings.js";
+import { VOICE, voiceProvider } from "../core/voice-provider.js";
 import { SH } from "../core/paths.js";
 import * as M from "../core/machines.js";
 import * as HC from "../core/host.js";
@@ -198,6 +199,9 @@ export class Settings {
         agent: { role: r.id, pick: p.value ?? null, sel, unset, other: !s && r.id === "reviewer" && !unset },
         ...(s ? {} : { file: r.file }), ...this.follows(s, p, button, r.id, null) } as SettingRow;
     });
+    if (!s) rows.push({ label: VOICE.title, key: "voice.provider",
+      value: VOICE.choices.find(([id]) => id === voiceProvider(this.file))![1],
+      options: VOICE.choices.map(([, label]) => label), hint: VOICE.about });
     // Backup: the other CLI takes over a task once when its agent can't go on (on: unset or a CLI; off: "off"); a
     // machine where the other CLI can't is one more line under it
     const b = this.pick(scope, "backup", "agent");
@@ -514,6 +518,11 @@ export class Settings {
       if (word !== null && word !== "on" && word !== "off") throw new Error("Not one of its choices.");
       const parent = space ? file.everywhere?.agents?.feedback ?? DEFAULTS.agents.feedback : DEFAULTS.agents.feedback;
       put("agents", "feedback", word === null || (word === "on") === parent ? null : word === "on");
+    } else if (key === "voice.provider") {
+      if (space) throw new Error("Voice calls are configured for every space at once.");
+      const choice = VOICE.choices.find(([, label]) => label === word);
+      if (word !== null && !choice) throw new Error("Not one of its choices.");
+      put("voice", "provider", choice && choice[0] !== "elevenlabs" ? choice[0] : null);
     } else if (key === "agents.feedback_repo") {
       // Everywhere's only: owner/name (a github.com link is made one); empty goes back to Shepherdr's own repo
       if (space) throw new Error("The feedback repo is set for every space at once.");

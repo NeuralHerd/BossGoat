@@ -12,7 +12,8 @@ place, never overwrites what you made yourself, and keeps a backup of anything i
   web app.
 - Optional, per add-on: `gh` (pull requests), node (the task browser in the window), bun,
   `pw-record` and `pw-play` for dictation and voice calls in the window on Linux (on macOS, Apple's command line
-  tools: `xcode-select --install`), an ElevenLabs key for voice calls and dictation. A restricted key needs
+  tools: `xcode-select --install`), Codex with ChatGPT sign-in for experimental voice calls, Claude Code or Cursor CLI sign-in with on-device English speech on macOS, or an ElevenLabs key for calls and dictation
+  ([voice setup](voice.md)). A restricted ElevenLabs key needs
   "User → Read" (elevenlabs.io › Developers › API Keys) for its credits to show under Plan usage in Settings › Machines.
 
 ## Install

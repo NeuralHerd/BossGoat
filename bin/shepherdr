@@ -371,6 +371,12 @@ def service_items(src):
     """The service (its TypeScript runs on Bun as it is), the shared core and the built web app; and what makes that
     folder a source for a web-only install on another machine (Serve from: `bossgoat web install-on` packs it)."""
     items = [("service", f"{SHARE}/package.json", os.path.join(src, "package.json")),
+             ("service", f"{SHARE}/bun.lock", os.path.join(src, "bun.lock")),
+             ("service", f"{SHARE}/lib/codex-voice.js", os.path.join(src, "lib", "codex-voice.js")),
+             ("service", f"{SHARE}/lib/local-voice.js", os.path.join(src, "lib", "local-voice.js")),
+             ("service", f"{SHARE}/lib/local-agent.js", os.path.join(src, "lib", "local-agent.js")),
+             ("service", f"{SHARE}/lib/local-speech.js", os.path.join(src, "lib", "local-speech.js")),
+             ("service", f"{SHARE}/lib/mac-speech.swift", os.path.join(src, "lib", "mac-speech.swift")),
              # which add-ons the web app leaves out while off (Settings › Window)
              ("service", f"{SHARE}/lib/addons.json", os.path.join(src, "lib", "addons.json"))]
     # the service, the shared core, and the web app's shared code the service runs too (alerts, types' helpers)
@@ -593,6 +599,9 @@ def install_service(r, rec, home):
     rec.setdefault("files", {})[rel] = fsha(rel, data)
     if not home or r.dry:
         return
+    deps = subprocess.run([bun, "install", "--production", "--frozen-lockfile"], cwd=r.p(SHARE), capture_output=True, text=True)
+    if deps.returncode:
+        raise Stop("BossGoat service dependencies could not be installed: " + deps.stderr[-1000:])
     # SHEP-173: a voice call on now would be cut by the restart: the service starts again on the new code by itself
     # once no call is on (service/main.ts restart-when-free)
     if same_unit and has_unit(r.root) and calls_on(r.root):
