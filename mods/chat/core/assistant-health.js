@@ -1,5 +1,4 @@
 // Shared, evidence-based Assistant status. A running process alone does not prove sign-in.
-export const HEALTH_COLORS = { background: "#ffffff", ink: "#1d1d1f", muted: "#1d1d1fcc", border: "#1d1d1f21", link: "#0070d9" };
 export function assistantHealth({ agent = "Agent", installed = null, workspace = null, phase = "fresh", active = false, screen = "", error = "", since = 0, now = Date.now() } = {}) {
   const text = `${screen} ${error}`;
   const login = /not authenticated|not logged in|authentication (?:required|failed)|unauthorized|invalid api key|(?:please|must|need to) (?:sign|log)[ -]?in|(?:sign|log)[ -]?in (?:required|to (?:continue|start|use)|with (?:your|browser|ChatGPT))|^\s*[>›❯]?\s*(?:sign|log)[ -]?in\s*$/im.test(text);
@@ -14,7 +13,9 @@ export function assistantHealth({ agent = "Agent", installed = null, workspace =
     { label: "Startup", text: issue === "slow" ? "Taking longer than expected" : phase === "fresh" ? "Ready to start" : active ? "Conversation connected" : phase === "ended" ? "Agent stopped" : "Waiting for the agent" },
   ];
   const detail = { agent: "Choose an installed agent, then retry your saved message.", login: "Complete sign-in in the agent’s screen, then check again.", workspace: "Check this space’s folder and its access permissions, then check again.", slow: "Your message is saved. Check the agent’s startup screen before retrying.", error: `${String(error).slice(0, 240)} Check again after resolving this error.` }[issue] ?? "";
-  return { rows, issue, detail, action: issue === "agent" ? "choose" : issue === "login" || issue === "slow" ? "terminal" : "check" };
+  const summary = { agent: `${agent} is not installed`, login: "Sign-in required", workspace: "Check folder access", slow: "Startup is taking longer", error: "Connection issue" }[issue]
+    ?? (active ? "Connected" : phase === "fresh" ? "Ready to start" : phase === "ended" ? "Agent stopped" : "Waiting for agent");
+  return { rows, summary, issue, detail, action: issue === "agent" ? "choose" : issue === "login" || issue === "slow" ? "terminal" : "check" };
 }
 // Arguments are passed separately; neither a folder nor a CLI name becomes shell source.
 export const HEALTH_PROBE = `PATH="$PATH:$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin"

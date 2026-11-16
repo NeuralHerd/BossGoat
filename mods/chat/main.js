@@ -38,8 +38,8 @@ import { WORDS, clock, bgGroups, subagentsOf, subagentWord, senderName, briefLab
 // Sending the person's words, as the web app does (core/send.js).
 import { refusal, taskTag, messageBody, replyInstead, steerNow, reactionLine, mentionedIn, sendTyped, SETTLE } from "./core/send.js";
 // hc whose send goes as the person, with no caller: never "Another agent" on another machine (SHEP-3, core/person.js).
-import { receipt, restorePending, UNCONFIRMED } from "./core/delivery.js";
-import { assistantHealth, HEALTH_COLORS, HEALTH_PROBE, healthProbe } from "./core/assistant-health.js";
+import { receipt, restorePending } from "./core/delivery.js";
+import { assistantHealth, HEALTH_PROBE, healthProbe } from "./core/assistant-health.js";
 import { asPerson } from "./core/person.js";
 import { AskCards, linkCtl } from "./cards.js";
 import * as strips from "./strips.js";
@@ -289,6 +289,7 @@ export default class Chat extends View {
     this.machine = this.addr?.includes("/") ? this.addr.split("/")[0] : null;
     this.phase = "finding";
     this.healthSince = Date.now();
+    this.healthOpen = false;
     this.conv = null;
     this.path = null;
     this.reset();
@@ -1628,33 +1629,41 @@ export default class Chat extends View {
     finally { this.healthChecking = false; cx.notify(); }
   }
 
+  healthButton(t) {
+    return this.round("show-health", "mods/chat/heart.svg", t, this.healthOpen ? "quiet" : "ghost", (cx) => {
+      this.healthOpen = !this.healthOpen;
+      if (this.healthOpen) cx.spawn((cx) => this.checkHealth(cx));
+    });
+  }
+
+  healthFooter(t, cx) {
+    return v_flex().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).py(8)
+      .child(this.healthCard(t, cx) ?? div())
+      .child(h_flex().child(this.healthButton(t)));
+  }
+
   healthCard(t, cx) {
+    if (!this.healthOpen) return null;
     const pending = this.pending.find((p) => p.late || p.failed || p.restored);
     const agentName = this.kind ?? this.choice?.sel?.agent ?? props()?.settings?.agent ?? "Agent";
     const h = assistantHealth({ ...this.health, agent: agentName, phase: this.phase,
       active: Boolean(this.conv?.items?.some((x) => x.kind === "agent")), screen: this.healthScreen ?? "",
       error: this.error ?? "", since: this.healthSince });
-    if (this.phase === "ready" && !h.issue && !pending && !this.queue.length && !this.healthOpen) return div().flex_none().px(16).child(this.button("show-health", "Assistant health", null, "secondary", t, (cx) => { this.healthOpen = true; cx.spawn((cx) => this.checkHealth(cx)); }));
-    const light = { ...t, background: HEALTH_COLORS.background, foreground: HEALTH_COLORS.ink, muted: HEALTH_COLORS.muted,
-      dim: HEALTH_COLORS.muted, border: HEALTH_COLORS.border, accent: HEALTH_COLORS.link };
-    const card = v_flex().id("assistant-health").flex_none().mx(16).my(8).p(12).gap(6).rounded(8)
-      .bg(light.background).border_1().border_color(light.border).text_color(light.foreground)
-      .child(div().font_medium().child("Assistant health"))
-      .children(h.rows.map((r) => div().text_size(12).child(`${r.label}: ${r.text}`)))
+    const card = v_flex().id("assistant-health").flex_none().mx(8).my(8).p(8).gap(6).rounded(8)
+      .bg(t.background).border_1().border_color(t.border).text_color(t.foreground)
+      .child(h_flex().gap(8).items_center()
+        .child(div().flex_1().text_size(12).font_medium().child(this.healthChecking ? "Checking…" : h.summary))
+        .child(this.button("health-check", "Refresh", null, "ghost", t, (cx) => cx.spawn((cx) => this.checkHealth(cx))))
+        .child(this.round("health-hide", "mods/chat/x.svg", t, "ghost", (cx) => { this.healthOpen = false; cx.notify(); })))
       .when(Boolean(h.detail), (e) => e.child(div().text_size(12).child(h.detail)));
-    const buttons = h_flex().gap(8).child(this.button("health-check", this.healthChecking ? "Checking…" : "Check again", null, "secondary", light, (cx) => cx.spawn((cx) => this.checkHealth(cx))));
-    if (h.action === "choose") buttons.child(this.button("health-agent", "Choose agent", null, "secondary", light, (cx) => this.modelCommand(null, cx)));
-    if (this.addr && h.action === "terminal") buttons.child(this.button("health-screen", h.issue === "login" ? "Complete sign-in" : "Open startup screen", null, "secondary", light, () => this.toTerminal()));
-    if (this.healthOpen) buttons.child(this.button("health-hide", "Hide", null, "secondary", light, (cx) => { this.healthOpen = false; cx.notify(); }));
-    card.child(buttons);
-    if (this.queue.length) card.child(div().text_size(12).child(`${this.queue.length} saved message${this.queue.length === 1 ? "" : "s"} waiting for the agent.`));
+    if (h.action === "choose") card.child(this.button("health-agent", "Choose agent", null, "ghost", t, (cx) => this.modelCommand(null, cx)));
+    if (this.addr && h.action === "terminal") card.child(this.button("health-screen", h.issue === "login" ? "Sign in" : "Open startup screen", null, "ghost", t, () => this.toTerminal()));
     if (pending) {
-      if (pending.text) card.child(div().text_size(12).child(`Saved message: ${excerpt(pending.text, 160)}`));
-      card.child(div().text_size(12).child(pending.late ? UNCONFIRMED : pending.failed || "Waiting for the agent. Your message is saved."));
-      const actions = h_flex().gap(8).child(this.button("delivery-check", pending.checking ? "Checking…" : "Check delivery", null, "secondary", light, (cx) => this.retry(pending, cx)));
-      if (pending.checked || !pending.attempted) actions.child(this.button("delivery-resend", pending.attempted ? "Send again (may duplicate)" : "Retry saved message", null, "secondary", light, (cx) => this.retry(pending, cx, true)));
+      card.child(div().text_size(12).child(pending.late ? "Delivery unconfirmed" : pending.failed || "Message saved. Waiting for agent."));
+      const actions = h_flex().gap(8).child(this.button("delivery-check", pending.checking ? "Checking…" : "Check delivery", null, "ghost", t, (cx) => this.retry(pending, cx)));
+      if (pending.checked || !pending.attempted) actions.child(this.button("delivery-resend", pending.attempted ? "Resend (may duplicate)" : "Retry", null, "ghost", t, (cx) => this.retry(pending, cx, true)));
       card.child(actions);
-    }
+    } else if (this.queue.length) card.child(div().text_size(12).child(`${this.queue.length} message${this.queue.length === 1 ? "" : "s"} waiting`));
     return card;
   }
 
@@ -4381,6 +4390,7 @@ export default class Chat extends View {
       // Where the box is in the window, for a typed /model's picker (modelCommand()).
       .on_mouse_move((e) => { if (e.bounds) this.composerAt = e.bounds; })
       .border_color(this.focused ? t.accent : t.input).bg(t.background)
+      .child(this.healthCard(t, cx) ?? div())
       .child(this.slashList(t, list) ?? div())
       .child(this.tiles(t) ?? div())
       // The padding is around the textarea, not on it: its own height is then exactly its rows
@@ -4406,6 +4416,7 @@ export default class Chat extends View {
         // Attach on the left, as ChatGPT and Claude have it: the desktop's file picker.
         .child(this.round("chat-attach", "mods/chat/plus.svg", t, "ghost", (cx) => this.pickFiles(cx)))
         .child(this.permissionsButton(t) ?? div())
+        .child(this.healthButton(t))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.blocked).child(rec === "idle" ? this.dict.error ?? "" : ""))
         .when(Boolean(this.addr), (el) => el.children(this.pickParts(t, true)))
         .when(!this.addr && this.phase === "fresh" && Boolean(this.choice?.sel) && Boolean(cx), (el) => el.child(this.freshPick(t, cx)))
@@ -4630,22 +4641,22 @@ export default class Chat extends View {
 
     // Starting (or the new agent's log not there yet): the person's message shows at once.
     const starting = (this.phase === "starting" || (this.phase === "finding" && this.role && !this.path)) && this.pending.length > 0;
-    root.child(this.healthCard(t, cx));
     if (this.phase === "fresh") {
       return root.child(this.fresh(t)).child(this.composer(t, null, cx)).child(div().flex_none().h(12));
     }
-    if (!this.addr && !starting) return root.child(this.notice(t, WORDS.noAgent, WORDS.noAgentBody, [
-      this.button("chat-close", "Close", null, "secondary", t, () => this.closeSelf())]));
+    const notice = (...args) => root.child(this.notice(t, ...args)).child(this.healthFooter(theme(), cx));
+    if (!this.addr && !starting) return notice(WORDS.noAgent, WORDS.noAgentBody, [
+      this.button("chat-close", "Close", null, "secondary", t, () => this.closeSelf())]);
     // A thread whose worker ended before its conversation was read: the same quiet words.
-    if (this.phase === "ended" && this.thread) return root.child(this.notice(t, WORDS.taskEnded, null, [
+    if (this.phase === "ended" && this.thread) return notice(WORDS.taskEnded, null, [
       ...(this.taskKey ? [this.button("chat-resume", this.resuming ? WORDS.resuming : "Resume",null, "primary", t, (cx) => this.resumeTask(cx))] : []),
-      this.button("chat-close", this.inner ? "Back to tasks" : "Close", null, "secondary", t, () => this.closeSelf())]));
-    if (this.phase === "ended" && !this.swapping) return root.child(this.notice(t, WORDS.agentEnded, null, [
-      this.button("chat-close", "Close chat", null, "secondary", t, () => this.closeSelf())]));
+      this.button("chat-close", this.inner ? "Back to tasks" : "Close", null, "secondary", t, () => this.closeSelf())]);
+    if (this.phase === "ended" && !this.swapping) return notice(WORDS.agentEnded, null, [
+      this.button("chat-close", "Close chat", null, "secondary", t, () => this.closeSelf())]);
     const open = this.button("chat-open-terminal", WORDS.openTerminal,"mods/workspace-chrome/terminal.svg", "primary", t, () => this.toTerminal());
-    if (this.phase === "unsupported") return root.child(this.notice(t, WORDS.unsupported, WORDS.unsupportedBody, [open]));
-    if (this.phase === "none") return root.child(this.notice(t, WORDS.notFound, WORDS.notFoundBody, [open]));
-    if ((this.phase === "finding" && !starting) || this.phase === "ended") return root.child(this.notice(t, this.swapping ? WORDS.restarting : WORDS.opening, null));
+    if (this.phase === "unsupported") return notice(WORDS.unsupported, WORDS.unsupportedBody, [open]);
+    if (this.phase === "none") return notice(WORDS.notFound, WORDS.notFoundBody, [open]);
+    if ((this.phase === "finding" && !starting) || this.phase === "ended") return notice(this.swapping ? WORDS.restarting : WORDS.opening, null);
 
     this.sizeBox();
     // An Assistant's chat: its tasks' workers' asks, before the rows (their live rows say so).

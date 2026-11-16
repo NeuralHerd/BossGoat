@@ -3,7 +3,6 @@
 // or is starting does it wait, and the bubble says why.
 import clsx from 'clsx'
 import * as SL from '@core/slash.js'
-import { HEALTH_COLORS } from '@core/assistant-health.js'
 const { typing: slashTyping, match: slashMatch } = SL as any
 import { openAccept } from '@client/screens/Accept.tsx'
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ComponentType, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from 'react'
@@ -2201,6 +2200,7 @@ function Composer({ chatKey, placeholder, cli, suggest = null }: { chatKey: stri
                 </IconButton>
               ) : null}
               <PermissionLineKept chatKey={chatKey} />
+              <AssistantHealth chatKey={chatKey} />
               <div className="flex-1" />
               <AgentLineKept chatKey={chatKey} cli={cli} />
               {Mic ? <MicKept chatKey={chatKey} /> : null}
@@ -2952,8 +2952,9 @@ function Ended({ chatKey }: { chatKey: string }) {
 }
 
 function AssistantHealth({ chatKey }: { chatKey: string }) {
+  const panel = useRef<HTMLDetailsElement>(null)
   const chat = useChat(chatKey)
-  const [health, setHealth] = useState<{ rows: { label: string; text: string }[]; detail: string; action: string } | null>(null)
+  const [health, setHealth] = useState<{ summary: string; detail: string; action: string } | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const check = async () => {
@@ -2963,15 +2964,22 @@ function AssistantHealth({ chatKey }: { chatKey: string }) {
     finally { setBusy(false) }
   }
   useEffect(() => { setHealth(null) }, [chatKey])
-  return <details open={chat?.notice ? true : undefined} className="mx-4 my-2 shrink-0 rounded-lg border p-3 text-sm" style={{ colorScheme: 'light', background: HEALTH_COLORS.background, color: HEALTH_COLORS.ink, borderColor: HEALTH_COLORS.border }} onToggle={(e) => { if (e.currentTarget.open && !health && !busy) void check() }}>
-    <summary className="cursor-pointer font-medium">Assistant health</summary>
-    {health?.rows.map((r) => <p key={r.label} className="mt-1">{r.label}: {r.text}</p>)}
-    {health?.detail ? <p className="mt-2">{health.detail}</p> : null}
-    {error ? <p role="alert">{error}</p> : null}
-    <div className="mt-2 flex gap-4" style={{ color: HEALTH_COLORS.link }}>
-      <button type="button" disabled={busy} onClick={() => void check()}>{busy ? 'Checking…' : 'Check again'}</button>
-      {health?.action === 'choose' ? <button type="button" onClick={() => openRestart(chatKey, 'Assistant', true)}>Choose agent</button> : null}
-      {health?.action === 'terminal' ? <button type="button" onClick={() => openTerminal(chatKey)}>Open agent screen</button> : null}
+  return <details key={chatKey} ref={panel} className="shrink-0 text-sm" onKeyDown={(e) => { if (e.key === 'Escape') { e.currentTarget.open = false; e.stopPropagation() } }} onToggle={(e) => { if (e.currentTarget.open && !health && !busy) void check() }}>
+    <summary aria-label="Assistant health" className="press-dim flex size-7 cursor-pointer list-none items-center justify-center rounded-full text-fg2 hover:bg-hover phone:size-11 [&::-webkit-details-marker]:hidden">
+      <svg aria-hidden="true" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" /></svg>
+    </summary>
+    <div className="absolute inset-x-0 bottom-full z-21 mb-2 max-h-[60dvh] overflow-y-auto rounded-lg border border-line2 bg-bg p-3 text-fg shadow-menu">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex-1 font-medium">{busy ? 'Checking…' : health?.summary ?? 'Not checked'}</span>
+        <button type="button" className="text-fg2 hover:text-fg" disabled={busy} onClick={() => void check()}>Refresh</button>
+        <button type="button" aria-label="Close health" className="size-7 text-fg2 hover:text-fg" onClick={() => { if (panel.current) panel.current.open = false }}>×</button>
+      </div>
+      {health?.detail ? <p className="mt-2">{health.detail}</p> : null}
+      {error ? <p role="alert">{error}</p> : null}
+      <div className="mt-2 flex gap-4 text-accent">
+        {health?.action === 'choose' ? <button type="button" onClick={() => openRestart(chatKey, 'Assistant', true)}>Choose agent</button> : null}
+        {health?.action === 'terminal' ? <button type="button" onClick={() => openTerminal(chatKey)}>Open agent screen</button> : null}
+      </div>
     </div>
   </details>
 }
@@ -2985,10 +2993,9 @@ function ChatView({ chatKey, placeholder, unreachable }: { chatKey: string; plac
   // the window's notice instead of the conversation (opening, not a chat agent, not found, ended); a chat not heard
   // from yet is opening (a space's empty Assistant chat is its own state: no agent yet)
   const shown = chat?.notice ? chat : !chat && !chatKey.startsWith('p:') ? ({ key: chatKey, cli: '', messages: [], notice: 'opening' } as Chat) : null
-  if (shown) return <div className="flex min-h-0 flex-1 flex-col"><AssistantHealth chatKey={chatKey} /><Notice chat={shown} resume={() => act({ type: 'task-resume', chat: chatKey } as never)} /></div>
+  if (shown) return <div className="flex min-h-0 flex-1 flex-col"><Notice chat={shown} resume={() => act({ type: 'task-resume', chat: chatKey } as never)} /><div className="relative mx-4 my-2"><AssistantHealth chatKey={chatKey} /></div></div>
   return (
     <DropFiles chatKey={chatKey}>
-      <AssistantHealth chatKey={chatKey} />
       <FindBar chatKey={chatKey} />
       <StickToBottom key={chatKey} chatKey={chatKey}>
         {unreachable ? (
@@ -3000,7 +3007,7 @@ function ChatView({ chatKey, placeholder, unreachable }: { chatKey: string; plac
         ) : null}
         <Messages chat={chat ?? { key: chatKey, cli: 'Claude Code', messages: [] }} from={from} />
       </StickToBottom>
-      {chat?.finished && taskChatId(chatKey) ? <Ended chatKey={chatKey} /> : <Composer chatKey={chatKey} placeholder={placeholderOf(chatKey, chat, placeholder)} cli={chat?.cli ?? 'Claude Code'} suggest={suggestionOf(chat, suggestionsOn(snap?.settings))} />}
+      {chat?.finished && taskChatId(chatKey) ? <div className="relative"><Ended chatKey={chatKey} /><div className="mx-4 my-2"><AssistantHealth chatKey={chatKey} /></div></div> : <Composer chatKey={chatKey} placeholder={placeholderOf(chatKey, chat, placeholder)} cli={chat?.cli ?? 'Claude Code'} suggest={suggestionOf(chat, suggestionsOn(snap?.settings))} />}
     </DropFiles>
   )
 }

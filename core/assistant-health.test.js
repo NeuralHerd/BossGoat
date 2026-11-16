@@ -7,6 +7,9 @@ test("health distinguishes confirmed checks from unverified sign-in and gives a 
   const healthy = assistantHealth({ agent: "Cursor", installed: true, workspace: { readable: true, writable: false } });
   expect(healthy.rows.find((r) => r.label === "Sign-in").text).toBe("Not verified yet");
   expect(healthy.rows.find((r) => r.label === "Workspace").text).toBe("Read-only access");
+  expect(assistantHealth({ active: true }).summary).toBe("Connected");
+  expect(assistantHealth({}).summary).toBe("Ready to start");
+  expect(assistantHealth({ screen: "Please sign in to continue" }).summary).toBe("Sign-in required");
   expect(assistantHealth({ installed: false }).action).toBe("choose");
   expect(assistantHealth({ screen: "Please sign in to continue" })).toMatchObject({ issue: "login", action: "terminal" });
   expect(assistantHealth({ active: true, screen: "Signed in successfully" }).issue).toBeNull();
