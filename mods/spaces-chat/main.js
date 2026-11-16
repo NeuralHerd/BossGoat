@@ -1,3 +1,4 @@
+import { showMain } from "./task-navigation.js";
 // Workspace spaces: stable colored avatars, worktrees under their checkout,
 // grouped by machine when more than one is known. After a space's name, the repo
 // its first terminal is in now, only where unusual: its branch. Agent state lives in the agents list, not here. Click to
@@ -776,7 +777,7 @@ export default class Spaces extends View {
       .text_color(fresh || w.active ? t.foreground : t.muted)
       .when(w.active, el => el.bg(t.selected))
       .hover(s => s.bg(t.hover))
-      .on_click(() => run("space.select", { id: w.id }))
+      .on_click(() => { showMain(); run("space.select", { id: w.id }); })
       .on_mouse_down("right", e => this.menu(w, g, name, e))
       .child(tree ? svg("mods/workspace-chrome/branch.svg").size(20) : sidebarGlyph(iconOf(w.id), "message-square"))
       .when(fresh || ["blocked", "working", "done"].includes(w.status), el => el.child(div().absolute().right(4).bottom(4).size(5).rounded_full().bg(fresh ? t.accent : tone(t, w.status))));

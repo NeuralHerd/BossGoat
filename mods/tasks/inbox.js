@@ -1,3 +1,4 @@
+import { showTaskView, showMain } from "./task-navigation.js";
 // What needs the person, from every space and machine: the Tasks panel's "Needs you" (mods/tasks;
 // there is no Inbox panel). Items are derived
 // each time from what is there now and never stored, so they go once handled:
@@ -190,9 +191,7 @@ export function toAlert(args) {
   const k = terminals().find((x) => x.address === terminal);
   if (k?.labels?.["herdr.task"] && hasNode(layout(), "tasks-thread")) {
     setShared("tasks.thread", { terminal, task: null, title: agentInfo(terminal)?.title ?? null, at: Date.now() });
-    run("layout.select", { stack: "panel-body", child: "tasks" });
-    run("layout.select", { stack: "tasks", child: "tasks-thread" });
-    run("layout.show", { id: "panel" });
+    showTaskView();
     return;
   }
   toAgent(terminal);
@@ -375,8 +374,7 @@ function forgetUnblocked(all) {
 // Shows what needs the person: the Tasks panel on its Active tab (shared "tasks.show").
 export function showInbox() {
   setShared("tasks.show", { tab: "active", at: Date.now() });
-  run("layout.select", { stack: "panel-body", child: "tasks" });
-  run("layout.show", { id: "panel" });
+  showTaskView("tasks-list");
 }
 
 // To an agent: its chat if one shows it, else its pane, else Herdr finds it.
@@ -399,13 +397,12 @@ const hasNode = (n, id) => Boolean(n && typeof n === "object") && (n.id === id |
 export function peekTerminal(terminal, task = null, title = null) {
   if (!hasNode(layout(), "tasks-thread")) { run("terminal.peek", { terminal }); return; }
   setShared("tasks.thread", { terminal, task, title: title ?? agentInfo(terminal)?.title ?? null, at: Date.now() });
-  run("layout.select", { stack: "panel-body", child: "tasks" });
-  run("layout.select", { stack: "tasks", child: "tasks-thread" });
-  run("layout.show", { id: "panel" });
+  showTaskView();
   setShared("tasks.thread.termreq", { terminal, at: Date.now() });
 }
 
 function selectTab(tab) {
+  showMain();
   const s = spaces().find((x) => x.tabs.some((t) => t.id === tab));
   if (s && !s.active) run("space.select", { id: s.id });
   run("tab.select", { id: tab });

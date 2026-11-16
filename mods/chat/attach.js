@@ -131,6 +131,9 @@ d="$1"; shift; mkdir -p "$d"
 for p in "$@"; do
   [ -f "$p" ] || continue
   s=$(magick identify -format '%w %h' "$p[0]" 2>/dev/null) || s=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$p" 2>/dev/null | tr ',' ' ')
+  if [ -z "$s" ]; then
+    s=$(sips -g pixelWidth -g pixelHeight "$p" 2>/dev/null | awk '/^[[:space:]]*pixelWidth:/{w=$2} /^[[:space:]]*pixelHeight:/{h=$2} END {if (w ~ /^[0-9]+$/ && h ~ /^[0-9]+$/ && w > 0 && h > 0) print w, h}')
+  fi
   [ -n "$s" ] || continue
   n=$(printf '%s' "$p" | cksum | cut -d' ' -f1)-$(printf '%s' "\${p##*/}" | tr -c 'A-Za-z0-9._-' '_')
   [ -f "$d/$n" ] || ln -f "$p" "$d/$n" 2>/dev/null || cp "$p" "$d/$n" 2>/dev/null || continue
@@ -143,8 +146,8 @@ export async function viewable(list) {
   const out = {};
   for (const line of (r?.stdout ?? "").split("\n")) {
     const [p, n, size] = line.split("\t");
-    const [w, h] = (size ?? "").split(" ").map(Number);
-    if (p && n && w && h) out[p] = { rel: `data/chat-attach/view/${n}`, w, h };
+    const [w, h] = (size ?? "").trim().split(/\s+/).map(Number);
+    if (p && n && Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) out[p] = { rel: `data/chat-attach/view/${n}`, w, h };
   }
   return out;
 }

@@ -1,3 +1,4 @@
+import { showTaskView, tasksInMain, taskViewShown } from "./task-navigation.js";
 // Tasks: named pieces of work with a prompt, one list per folder (the repo root in git, worktrees
 // included). Each folder's list is ~/.herdr/tasks/<slug>.json on the machine the folder is on,
 // changed only through the herdr-task CLI (bin/herdr-task), which coordinators and agents use.
@@ -12,8 +13,8 @@
 // hidden behind its count at the end. The machine is never a group: a space's heading says it only
 // when two machines have a space of that name.
 // "Needs you" lists everything that needs the person (inbox.js), here or not.
-// This space (the filter row's first chip, remembered by this panel): only the shown space's tasks, automations and
-// Needs you (core/tasks.js inSpace); it follows the space picked. The tab bar's counts still cover every space.
+// The Space selector filters tasks, automations and Needs you (core/tasks.js inSpace).
+// The tab bar's counts still cover every space.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
@@ -94,9 +95,11 @@ export default class Tasks extends View {
     const saved = (k) => { try { const v = JSON.parse(localStorage.getItem(k) ?? "[]"); return new Set(Array.isArray(v) ? v : []); } catch { return new Set(); } };
     this.shutKeys = saved("shut");
     // The filter row's choice: "all" (grouped) or one status, flat.
-    try { this.filter = localStorage.getItem("filter") ?? "all"; } catch { this.filter = "all"; }
-    // This space: on or off, remembered (off at first: every space's, as before).
-    try { this.here = localStorage.getItem("here") === "1"; } catch { this.here = false; }
+    try { this.filter = localStorage.getItem("bossgoat.tasks.status") ?? "working"; } catch { this.filter = "working"; }
+    this.filtersOpen = false;
+    // A named space, or every space; independent of the Assistant currently open.
+    try { this.scope = localStorage.getItem("bossgoat.tasks.space") || null; } catch { this.scope = null; }
+    this.scopeAt = shared("tasks.scopereq")?.at ?? 0;
     this.filterAt = shared("tasks.filterreq")?.at ?? 0;
     this.searchAt = shared("tasks.searchreq")?.at ?? 0;
     if (shared("tasks.menuopen")) setShared("tasks.menuopen", null); // left over if the app quit with More open
@@ -106,8 +109,7 @@ export default class Tasks extends View {
     this.prefixes = new Map(); // another folder's list (not loaded here): "<machine> <slug>" -> its prefix (null: none found)
     // A toast asks for Needs you (shared "tasks.show"): only asks made from now on.
     this.shownAt = shared("tasks.show")?.at ?? 0;
-    // The search field (Shepherdr's "Filter tasks"): filters as you type, Done and archived tasks
-    // too. Esc clears it; F gets to it while the list holds the keyboard.
+    // Search within the selected status. Esc clears it; F opens the filters and focuses it.
     this.query = InputState.new({ placeholder: "Filter tasks" });
     this.query.on("change", (_e, cx) => cx.notify());
     // Its search or list taking the keyboard: the Assistant chat beside it leaves it here (keyholder.js, #633).
@@ -129,7 +131,7 @@ export default class Tasks extends View {
         const c = await Promise.race([cmd, cx.sleep(5000)]);
         if (c === undefined) continue;
         cmd = null;
-        if (c === "search") this.query.focus();
+        if (c === "search") { this.filtersOpen = true; this.query.focus(); }
         // pane.go landed on this panel (mod.json "focusable"): the list takes the keyboard (F: the search field).
         else if (c === "focus") { holdKeys("tasks"); this.listFocus.focus(); }
         else if (GROUP_BY.includes(c) || ["folder", "machine", "machine-space"].includes(c)) setShared("tasks.group", groupBy(c));
@@ -272,17 +274,17 @@ export default class Tasks extends View {
     const t = theme();
     // A toast's "needs you" (inbox.js showInbox): Needs you opens.
     const show = shared("tasks.show");
-    if (show?.at && show.at !== this.shownAt) { this.shownAt = show.at; this.fold("needs", false); }
+    if (show?.at && show.at !== this.shownAt) { this.shownAt = show.at; this.pickFilter("needs"); this.fold("needs", false); }
     // A pick from the filter row's More (mods/tasks-menu).
     const fq = shared("tasks.filterreq");
     if (fq?.at && fq.at !== this.filterAt) { this.filterAt = fq.at; this.pickFilter(fq.key); }
+    const scope = shared("tasks.scopereq");
+    if (scope?.at && scope.at !== this.scopeAt) { this.scopeAt = scope.at; this.scope = scope.key || null; this.jumpQ = null; localStorage.setItem("bossgoat.tasks.space", this.scope ?? ""); }
     // Ctrl+K's jump (mods/jump) to a task with no chat to open: the list, searched for it, all statuses.
     const sq = shared("tasks.searchreq");
-    if (sq?.at && sq.at !== this.searchAt) { this.searchAt = sq.at; this.pickFilter("all"); this.archivedOpen = false; this.query.set_value(String(sq.q ?? "")); this.jumpQ = String(sq.q ?? ""); }
-    // Shepherdr settings' "Status filters" off (shared "tasks.filters" false): no row, all shown (This space too).
-    const filters = shared("tasks.filters") !== false;
-    // This space: the shown space's only; not for Ctrl+K's jump while its words are still in the search field.
-    const here = this.here && filters && !(this.jumpQ && this.query.value() === this.jumpQ) ? spaces().find((s) => s.active) ?? null : null;
+    if (sq?.at && sq.at !== this.searchAt) { this.searchAt = sq.at; this.pickFilter("all"); this.filtersOpen = true; this.archivedOpen = false; this.query.set_value(String(sq.q ?? "")); this.jumpQ = String(sq.q ?? ""); }
+    const here = this.scope && !(this.jumpQ && this.query.value() === this.jumpQ)
+      ? spaces().find((s) => s.id === this.scope) ?? { id: this.scope, name: "Unavailable space" } : null;
     let placed = this.lists.flatMap((l) => l.tasks.map((task) => this.place(l, task)));
     // Each task's status as its list says it now, archived ones too: a Needs-you item the list has moved past is stale.
     const allPlaced = placed;
@@ -305,7 +307,7 @@ export default class Tasks extends View {
       inbox = inbox.filter((x) => this.needFound(x, q));
     }
     const found = q ? archived.filter((p) => this.found(p, q)) : archived;
-    const graphPlaced = q ? [...placed, ...found] : placed;
+    const graphPlaced = q || this.filter === "done" ? [...placed, ...found] : placed;
     // Pinned (the person's pins, shared "tasks.pinned"): at the top of the grouped list, and in no
     // other group there, Needs you included (its item for a pinned task shows as that task's row).
     const pinSet = this.pins();
@@ -320,7 +322,7 @@ export default class Tasks extends View {
     // More than one machine has tasks: automations' rows say theirs.
     const multi = new Set(this.lists.filter((l) => l.tasks.length || l.automations?.length).map((l) => l.machine ?? "")).size > 1;
     this.multi = multi;
-    // Group by (the ⋯ menu): For you until another is chosen (core/tasks.js groupNow).
+    // Group by: For you until another is chosen (core/tasks.js groupNow).
     const by = groupNow(shared);
     this.names = { machine: false, space: true };
 
@@ -343,12 +345,8 @@ export default class Tasks extends View {
     const autos = lists.flatMap((l) => (l.automations ?? []).filter((a) => !q || matches(q, a.title, placeName(l), l.name, l.machine))
       .filter((a) => !here || inSpace(here, { machine: l.machine ?? null, folder: l.folder, space: a.space }))
       .map((a) => [l, a]));
-    // The filter row: All, then a chip for each status that holds something now.
-    const count = (k) => (k === "needs" ? needRows.length : k === "automations" ? autos.length : tasksOf[k].length);
-    // A chip picked stays picked while searching, even with nothing matching (its list says so).
-    const keep = filters && Boolean(q) && ORDER.includes(this.filter);
-    const chips = ORDER.filter((k) => count(k) || (keep && k === this.filter));
-    const filter = filters && chips.includes(this.filter) ? this.filter : "all";
+    const count = (k) => k === "needs" ? needRows.length : k === "automations" ? autos.length : tasksOf[k].length + (k === "done" ? found.length : 0);
+    const filter = this.filter === "all" || ORDER.includes(this.filter) ? this.filter : "working";
     // What rows say of where they are: their space, never their machine (SHEP-98: a quiet detail);
     // by space, nothing (the headings say it). For you's space rows sit under their heading (bare).
     this.names = filter === "all" && by === "space" ? { machine: false, space: false } : { machine: false, space: true };
@@ -356,7 +354,7 @@ export default class Tasks extends View {
     if (shared("tasks.place") === false) this.names = { machine: false, space: false };
     // A status's rows, made only when shown (by status, or its chip).
     const rowsOf = { needs: needRows, automations: autos.map(([l, a]) => this.autoRow(l, a, placed, t)) };
-    const rowsFor = (s) => (rowsOf[s] ??= tasksOf[s].map((p) => this.row(p, t)));
+    const rowsFor = (s) => (rowsOf[s] ??= (s === "done" && filter === "done" ? [...tasksOf[s], ...found] : tasksOf[s]).map((p) => this.row(p, t)));
     // Searching, every group shows whole and open (folded or not).
     const open = Boolean(q);
     const note = (text) => div().px(18).py(28).text_center().text_size(TEXT.label).text_color(t.dim).child(text);
@@ -365,7 +363,7 @@ export default class Tasks extends View {
     else if (filter !== "all") {
       const rows = rowsFor(filter);
       const what = filter === "needs" ? "tasks that need you" : filter === "automations" ? "automations" : `${STATUS[filter]} tasks`;
-      body.push(rows.length ? v_flex().flex_none().gap(1).children(rows) : note(`No ${what} match “${q}”.`));
+      body.push(rows.length ? v_flex().flex_none().gap(1).children(rows) : note(q ? `No ${what} match “${q}”.` : `No ${what.toLowerCase()}.`));
     }
     else {
       const rest = placed.filter((p) => !isPin(p));
@@ -423,29 +421,26 @@ export default class Tasks extends View {
     const dependencies = this.dependencyMode ??= localStorage.getItem("bossgoat.tasks.view") === "dependencies";
     const graphSelected = graphPlaced.filter((p) => filter === "all" ? Boolean(q) || p.section !== "done" : (filter === "needs" ? p.section === "needs" || inNeeds(p) : p.section === filter));
 
-    return v_flex().id("tasks").size_full().min_h(0).on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } }).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
-      .child(h_flex().h(42).flex_none().pl(14).pr(8).gap(6).items_center().border_b(1).border_color(t.border)
-        .child(div().font_semibold().child("Tasks"))
+    return v_flex().id("tasks").size_full().min_h(0).on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } }).overflow_hidden().bg(shared("layout") === "BossGoat" ? "#00000000" : t.chrome).border_t(1).border_color(t.border).text_color(t.foreground).text_size(13)
+      .child(h_flex().h(34).flex_none().pl(14).pr(8).gap(4).items_center()
+        .child(div().text_size(TEXT.label).font_medium().text_color(t.dim).child("Tasks"))
+        .child(div().text_size(11).text_color(t.dim).truncate().child(filter === "all" ? "All" : STATUS[filter] ?? "Automations"))
         .child(div().flex_1())
-        .children(["List", "Dependencies"].map((label, i) => div().id("tasks-view-" + i).px(8).py(5).rounded(6)
-          .text_size(12).cursor_pointer().bg(dependencies === Boolean(i) ? t.selected : t.background)
-          .hover((s) => s.bg(t.hover)).on_click((_e, cx) => {
+        .children(["List", "Dependencies"].map((label, i) => this.iconButton("tasks-view-" + i, label,
+          i ? "mods/workspace-chrome-shepherdr/network.svg" : "mods/tasks/list.svg", dependencies === Boolean(i), t, (_e, cx) => {
             this.dependencyMode = Boolean(i); this.archivedOpen = false;
             localStorage.setItem("bossgoat.tasks.view", i ? "dependencies" : "list"); cx.notify();
-          }).child(label)))
-        .child(h_flex().id("task-more").size(H.sm).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer().text_color(t.muted)
-          .hover((s) => s.bg(t.hover).text_color(t.foreground))
-          // Its menu (mods/tasks-menu): a 28 heading, then 32 rows (ui.js menuRow).
-          .on_click(() => openOverlay({ mod: "tasks-menu", kind: "popup", at: "pointer", width: 200, height: 8 + 28 + 3 * 32, props: { menu: "group", current: by } }))
-          .child(svg("mods/tasks/more.svg").size(14).flex_none())))
-      .child(this.searchField(t))
-      .when(!this.archivedOpen && filters, (el) => el.child(this.filterRow(chips, count, filter, t, here)))
+          })))
+        .child(this.iconButton("task-filters", "Filters", "mods/tasks/filter.svg", this.filtersOpen, t, (_e, cx) => {
+          this.filtersOpen = !this.filtersOpen; cx.notify();
+        })))
+      .when(this.filtersOpen, (el) => el.child(this.searchField(t)).child(this.filterControls(filter, count, t, here, by)))
       // A press in the list gives it the keyboard: F then goes to the search field.
       .child(v_flex().id("task-list").flex_1().min_h(0).overflow_y_scrollbar().p(6).gap(6)
         .track_focus(this.listFocus)
         .on_mouse_down("left", () => { holdKeys("tasks"); this.listFocus.focus(); })
         .on_key_down((e, cx) => {
-          if (e.keystroke === "f" && !this.searching) { cx.stop_propagation(); this.query.focus(); cx.notify(); }
+          if (e.keystroke === "f" && !this.searching) { cx.stop_propagation(); this.filtersOpen = true; this.query.focus(); cx.notify(); }
           else if (e.keystroke === "escape" && this.archivedOpen) { cx.stop_propagation(); this.archivedOpen = false; cx.notify(); }
         })
         .when(Boolean(this.error), (el) => el.child(h_flex().m(6).p(10).gap(8).items_start().rounded(RADIUS.card).bg(t.surface).border_1().border_color(t.border)
@@ -473,78 +468,27 @@ export default class Tasks extends View {
     });
   }
 
-  // The filter row: All statuses (not the header's All, which is folders), a chip for each status that wants a look (Needs you, Working, Ready) as
-  // far as the panel's width allows, and the rest (and any that don't fit) behind More, a menu.
-  // It never wraps and never scrolls. Widths are estimated: about 7px a character at 12px.
-  filterRow(chips, count, filter, t, here) {
-    const label = (k) => (k === "automations" ? "Automations" : STATUS[k]);
-    const est = (text, n) => 16 + text.length * 7 + (n > 0 ? 5 + String(n).length * 7 : 0) + 2;
-    const MORE = 62;
-    let room = (this.width ?? 360) - 12 - est("This space", 0) - 2 - est("All statuses", 0);
-    const shown = [];
-    const primary = ["needs", "working", "ready"].filter((k) => chips.includes(k));
-    const others = chips.length > primary.length;
-    for (const [i, k] of primary.entries()) {
-      const w = est(label(k), count(k));
-      // Room for More too, unless this is the last chip and nothing else goes in it.
-      if (w + (others || i < primary.length - 1 ? MORE : 0) > room) break;
-      shown.push(k);
-      room -= w;
-    }
-    const inMore = chips.filter((k) => !shown.includes(k));
-    const picked = inMore.includes(filter) ? filter : null;
-    const items = inMore.map((k) => ({ key: k, label: label(k), count: count(k) }));
-    return h_flex().id("task-filter").flex_none().px(6).pt(6).gap(2).overflow_hidden()
-      .child(this.hereChip(here, t))
-      .child(this.chip("all", "All statuses", 0, filter, t))
-      .children(shown.map((k) => this.chip(k, label(k), count(k), filter, t)))
-      .when(inMore.length > 0, (el) => el.child(this.moreChip(picked, picked ? label(picked) : "More", picked ? count(picked) : 0, items, filter, t)));
+  iconButton(id, label, icon, on, t, click) {
+    return div().id(id).size(H.sm).flex_none().flex().items_center().justify_center().rounded(RADIUS.control)
+      .cursor_pointer().text_color(on ? t.foreground : t.dim).when(Boolean(on), (el) => el.bg(t.selected))
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).accessibility_label(label).tooltip(label)
+      .on_click(click).child(svg(icon).size(15));
   }
 
-  // The More chip: a chip like the others with a chevron. Its menu (mods/tasks-menu) opens under it, left edges
-  // lined up; while it's open (shared "tasks.menuopen", kept by the menu) the chip sits on the hover background.
-  moreChip(picked, text, n, items, filter, t) {
-    const open = Boolean(shared("tasks.menuopen"));
-    const lit = picked ? t.selected : open ? t.hover : t.background;
-    return h_flex().id("chip-more").h(H.sm).pl(8).pr(6).gap(4).flex_none().items_center().rounded(RADIUS.control).cursor_pointer().text_size(TEXT.label)
-      .bg(lit).text_color(picked || open ? t.foreground : t.muted)
-      .hover((s) => s.bg(picked ? t.selected : t.hover).text_color(t.foreground))
-      .on_mouse_down("left", (e) => { this.moreAt = e.bounds; })
-      .on_click((_e, cx) => {
-        const b = this.moreAt;
-        openOverlay({ mod: "tasks-menu", kind: "popup", width: 168, height: 8 + items.length * 32,
-          at: b ? { x: b.x, y: b.y + b.height + 4 } : "pointer", props: { menu: "filter", items, current: filter } });
-      })
-      .child(text)
-      .when(n > 0, (el) => el.child(div().text_color(t.dim).child(String(n))))
-      .child(svg("mods/workspace-chrome/chevron-down.svg").size(12).flex_none().text_color(open ? t.muted : t.dim));
-  }
-
-  // A filter chip: a status and how many hold it; the chosen one sits on a soft background.
-  chip(key, label, n, filter, t) {
-    const on = key === filter;
-    return h_flex().id(`chip-${key}`).h(H.sm).px(8).gap(5).flex_none().items_center().rounded(RADIUS.control).cursor_pointer().text_size(TEXT.label)
-      .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted)
-      .hover((s) => s.bg(on ? t.selected : t.hover).text_color(t.foreground))
-      .on_click((_e, cx) => { this.pickFilter(key); cx.notify(); })
-      .child(label)
-      .when(n > 0, (el) => el.child(div().text_color(t.dim).child(String(n))));
-  }
-
-  // This space: a toggle before the status chips (they pick one status; this narrows to the shown space whatever the
-  // status). On, it sits on the soft background, as a picked chip.
-  hereChip(here, t) {
-    const on = this.here;
-    return h_flex().id("chip-here").h(H.sm).px(8).gap(5).flex_none().items_center().rounded(RADIUS.control).cursor_pointer().text_size(TEXT.label)
-      .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted)
-      .hover((s) => s.bg(on ? t.selected : t.hover).text_color(t.foreground))
-      .on_click((_e, cx) => {
-        this.here = !this.here;
-        this.jumpQ = null;
-        try { localStorage.setItem("here", this.here ? "1" : "0"); } catch {}
-        cx.notify();
-      })
-      .child("This space");
+  filterControls(filter, count, t, here, by) {
+    const status = [{ key: "all", label: "All statuses" }, ...ORDER.map((key) => ({ key, label: STATUS[key] ?? "Automations", count: count(key) }))];
+    const scope = [{ key: "", label: "All spaces" }, ...spaces().map((s) => ({ key: s.id, label: `${s.name}${s.machine ? ` · ${s.machine}` : ""}` }))];
+    const field = (id, label, value, menu, items, current) => h_flex().id(id).h(28).px(8).gap(8).items_center().rounded(RADIUS.control)
+      .cursor_pointer().hover((el) => el.bg(t.hover)).on_click(() => openOverlay({ mod: "tasks-menu", kind: "popup", at: "pointer", width: 240,
+        height: Math.min(440, 8 + items.length * 32 + (menu === "group" ? 28 : 0)), props: { menu, items, current } }))
+      .child(div().w(42).text_size(TEXT.label).text_color(t.dim).child(label))
+      .child(div().flex_1().truncate().text_size(TEXT.label).text_color(t.foreground).child(value))
+      .child(svg("mods/workspace-chrome/chevron-down.svg").size(12).text_color(t.dim));
+    return v_flex().id("task-filter-controls").flex_none().px(6).py(6).gap(2)
+      .child(field("task-status-filter", "Status", status.find((s) => s.key === filter).label, "filter", status, filter))
+      .child(field("task-space-filter", "Space", here?.name ?? "All spaces", "scope", scope, this.scope ?? ""))
+      .child(field("task-group-filter", "Group", { you: "For you", space: "Space", status: "Status" }[by], "group",
+        ["you", "space", "status"], by));
   }
 
   // A Needs-you item of the shown space: its task's list or space (core/tasks.js inSpace), else the tab its agent is in
@@ -557,7 +501,7 @@ export default class Tasks extends View {
 
   pickFilter(key) {
     this.filter = key;
-    try { localStorage.setItem("filter", key); } catch {}
+    try { localStorage.setItem("bossgoat.tasks.status", key); } catch {}
   }
 
   // A row's second line (row()): Needs you and Merging, why; Working, what its agent says it's
@@ -597,7 +541,7 @@ export default class Tasks extends View {
     const q = this.query.value();
     return div().flex_none().px(6).pt(6)
       .child(h_flex().id("task-search").h(30).pl(9).pr(4).gap(7).items_center().rounded(8).border_1()
-        .border_color(this.searching ? t.accent : t.input).bg(t.background)
+        .border_color(this.searching ? t.accent : t.input)
         .key_context("tasks_search")
         .on_action("tasks_search_clear", (_e, cx) => { cx.stop_propagation(); this.clearSearch(cx); })
         .child(svg("mods/workspace-chrome/search.svg").size(14).flex_none().text_color(t.dim))
@@ -898,7 +842,10 @@ export default class Tasks extends View {
   row(p, t, bare = false) {
     const { list, task, live, section } = p;
     const shown = this.frame ? (this.frame.agents ??= new Map(agents().map((a) => [a.address, a]))) : new Map(agents().map((a) => [a.address, a]));
-    const focused = live.some((a) => shown.get(a.address)?.focused);
+    const current = shared("tasks.thread"), selected = current?.key;
+    const focused = tasksInMain() ? taskViewShown() && (selected
+      ? selected.id === task.id && selected.folder === list.folder && (selected.machine ?? null) === (list.machine ?? null)
+      : live.some((a) => a.address === current?.terminal)) : live.some((a) => shown.get(a.address)?.focused);
     // The second line, as Shepherdr's: Working, what its agent says it's doing (herdr-task status),
     // its time left short under the glyph, or a provider retry's line while Herdr waits; Needs you,
     // why; Queued, what it waits for ("after HERD-3"); Merging, why it waits. The id leads it.
@@ -1043,7 +990,7 @@ const hasNode = (n, id) => Boolean(n && typeof n === "object") && (n.id === id |
 const threads = () => hasNode(layout(), "tasks-thread");
 function openThread({ terminal = null, task = null, title = null, key = null, log = null, note = null }) {
   setShared("tasks.thread", { terminal, task, title, key, log, note, at: Date.now() });
-  run("layout.select", { stack: "tasks", child: "tasks-thread" });
+  showTaskView();
   // On its chat, as mods/chat/panel.js openTaskThread: the drill-in has one Terminal block, so it would
   // still show the last task's worker under this task's header (GitHub #756).
   if (hasNode(layout(), "tasks-thread-body")) run("layout.select", { stack: "tasks-thread-body", child: "tasks-thread-chat" });

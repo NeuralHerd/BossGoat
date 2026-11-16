@@ -1,3 +1,4 @@
+import { showTaskView, showMain, tasksInMain } from "./task-navigation.js";
 // Chat: an agent's conversation as a chat, read from the agent's own session log, with a
 // box to write to it. The agent keeps running in its terminal; this only shows it another way.
 // Opened by the `pane-chat` header's Chat / Terminal switch in the agent pane's spot: the
@@ -2243,9 +2244,7 @@ export default class Chat extends View {
     const live = x?.live ?? [];
     const worker = (live.find((a) => a.role === "worker") ?? (live.some((a) => a.role) ? null : live[0]))?.address;
     if (worker) { this.openThread({ terminal: worker, task: taskRef(x), title: x.title }); return; }
-    run("layout.select", { stack: "panel-body", child: "tasks" });
-    backToTasks();
-    run("layout.show", { id: "panel" });
+    showTaskView("tasks-list");
   }
 
   // A worker's thread ({ terminal, task, title }): its chat inside the Tasks panel (drill in,
@@ -2256,6 +2255,7 @@ export default class Chat extends View {
 
   // A pane, wherever it is: its space and tab shown, then the pane focused.
   revealPane(pane) {
+    showMain();
     const p = panes().find((x) => x.pane === pane);
     if (!p) return;
     const s = spaces().find((x) => x.tabs.some((t) => t.id === p.tab));
@@ -2682,7 +2682,7 @@ export default class Chat extends View {
     const place = s ? (s.machine && !String(s.id).includes("/") ? `${s.machine}/${s.id}` : String(s.id)) : null;
     const tree = layout();
     const panel = find(tree, "panel"), thread = shared("tasks.thread");
-    const open = panel && !panel.hidden && find(tree, "panel-body")?.active === TASKS_STACK && find(tree, TASKS_STACK)?.active === THREAD && thread?.task;
+    const open = (tasksInMain() || (panel && !panel.hidden && find(tree, "panel-body")?.active === TASKS_STACK)) && find(tree, TASKS_STACK)?.active === THREAD && thread?.task;
     const m = open && String(thread.terminal ?? "").includes("/") ? String(thread.terminal).split("/")[0] : null;
     const TAB = { [THREAD_CHAT]: "chat", [THREAD_TERM]: "terminal", [THREAD_PR]: "pr", [THREAD_BROWSER]: "browser" };
     const w = JSON.stringify({ place, task: open ? (m ? `${m}:${thread.task}` : String(thread.task)) : null, tab: open ? TAB[find(tree, THREAD_BODY)?.active] ?? "chat" : null });
@@ -2743,14 +2743,14 @@ export default class Chat extends View {
     if (nav.kind === "space") {
       const sp = spaceOf(nav.place);
       if (!sp) return no("this window doesn't have that space");
-      run("space.select", { id: sp.id });
+      showMain(); run("space.select", { id: sp.id });
       return { ok: true };
     }
     if (nav.kind === "chat") {
       // the call's own chat: its pane; another chat: its space, or its task's chat in the Tasks panel
       if (nav.addr === this.addr) { const mine = this.myPane() ?? this.lastPane; if (!mine) return no("its pane isn't open"); this.revealPane(mine); return { ok: true }; }
       if (/\/worker$/.test(nav.chat ?? "") && nav.addr) { openTaskThread(nav.addr, nav.chat.slice(0, -7).split(":").pop(), null); return { ok: true }; }
-      if (String(nav.chat ?? "").startsWith("p:")) { const sp = spaceOf(nav.chat.slice(2).replace(":", "/")); if (!sp) return no("this window doesn't have that space"); run("space.select", { id: sp.id }); return { ok: true }; }
+      if (String(nav.chat ?? "").startsWith("p:")) { const sp = spaceOf(nav.chat.slice(2).replace(":", "/")); if (!sp) return no("this window doesn't have that space"); showMain(); run("space.select", { id: sp.id }); return { ok: true }; }
       return no("that chat isn't running");
     }
     if (nav.kind === "task") {
@@ -2761,7 +2761,7 @@ export default class Chat extends View {
       if (!nav.addr) {
         // no agent running: the Tasks panel, searched for it
         setShared("tasks.searchreq", { q: `${nav.ref ?? nav.task} ${nav.title ?? ""}`.trim(), at: Date.now() });
-        run("layout.select", { stack: "panel-body", child: TASKS_STACK }); backToTasks(); run("layout.show", { id: "panel" });
+        showTaskView("tasks-list");
         return { ok: true };
       }
       openTaskThread(nav.addr, nav.ref ?? String(nav.task).split(":").pop(), nav.title ?? null);
@@ -2771,9 +2771,7 @@ export default class Chat extends View {
       return { ok: true };
     }
     if (nav.kind === "tasks" || nav.kind === "needs") {
-      run("layout.select", { stack: "panel-body", child: TASKS_STACK });
-      backToTasks();
-      run("layout.show", { id: "panel" });
+      showTaskView("tasks-list");
       // the filter row's chip and the search field, as the Tasks list's own keys set them (mods/tasks)
       const FILTER = { need: "needs", work: "working", ready: "ready", merging: "merging", queued: "queued", scheduled: "scheduled", todo: "todo", done: "done", automations: "automations" };
       const at = Date.now();
@@ -3351,7 +3349,7 @@ export default class Chat extends View {
     const found = q && String(x.text ?? x.code ?? "").toLowerCase().includes(q.toLowerCase()) ? `|f:${q}` : "";
     const open = (x.kind === "tools" || x.kind === "brief") && this.opened.has(x.id);
     const shown = open && x.steps ? x.steps.filter((s) => this.results.get(s.id) != null).length : 0;
-    return `${x.id}|${x.kind}${x.closed ? `.${x.closed}` : ""}|${open ? `o${x.steps?.length ?? 1}.${shown}` : ""}|${x.text?.length ?? x.code?.length ?? 0}|${x.from ? 1 : 0}${x.failed ? 1 : 0}${x.late ? 1 : 0}${x.waiting ? 1 : 0}${x.images ? 1 : 0}${x.files?.length ?? 0}|${x.paths?.length ?? 0}${x.paths?.every((p) => this.views[p]) ? "v" : ""}|${(x.pills ?? []).map((p) => p.emoji + (p.you ? 1 : 0) + (p.agent ? 1 : 0)).join("")}|${x.bar ? "b" : ""}${x.kind === "artifact" ? `|a${x.version ?? ""}${x.line ? "l" : ""}${x.pending ? "p" : ""}${x.peek ? `k${x.peek.paths.filter((p) => this.views[p]).length}.${x.peek.text.length}` : ""}` : ""}${x.kind === "tasknews" ? `|${x.accept ? "a" : ""}` : ""}${x.kind === "cardstrip" ? `|cs${x.sig}${x.first ? "F" : ""}${x.last ? "L" : ""}` : ""}|${x.clip ? `c${x.clip}` : ""}${x.open ? "o" : ""}${x.kind === "day" ? x.text : ""}|${x.top0 ? "T" : ""}${x.bot0 ? "B" : ""}${x.h ?? ""}${found}`;
+    return `${x.id}|${x.kind}${x.closed ? `.${x.closed}` : ""}|${open ? `o${x.steps?.length ?? 1}.${shown}` : ""}|${x.text?.length ?? x.code?.length ?? 0}|${x.from ? 1 : 0}${x.failed ? 1 : 0}${x.late ? 1 : 0}${x.waiting ? 1 : 0}${x.images ? 1 : 0}${x.files?.length ?? 0}|${x.paths?.length ?? 0}${x.paths?.map((p) => this.views[p] ? "v" : this.views[p] === null ? "e" : "p").join("") ?? ""}|${(x.pills ?? []).map((p) => p.emoji + (p.you ? 1 : 0) + (p.agent ? 1 : 0)).join("")}|${x.bar ? "b" : ""}${x.kind === "artifact" ? `|a${x.version ?? ""}${x.line ? "l" : ""}${x.pending ? "p" : ""}${x.peek ? `k${x.peek.paths.filter((p) => this.views[p]).length}.${x.peek.text.length}` : ""}` : ""}${x.kind === "tasknews" ? `|${x.accept ? "a" : ""}` : ""}${x.kind === "cardstrip" ? `|cs${x.sig}${x.first ? "F" : ""}${x.last ? "L" : ""}` : ""}|${x.clip ? `c${x.clip}` : ""}${x.open ? "o" : ""}${x.kind === "day" ? x.text : ""}|${x.top0 ? "T" : ""}${x.bot0 ? "B" : ""}${x.h ?? ""}${found}`;
   }
 
   // A row's height before it is measured: bands and gaps are as tall as spaced() made them.
@@ -3702,11 +3700,11 @@ export default class Chat extends View {
       if (row.left) {
         const off = x === undefined ? -1 : x - this.edges().left;
         for (let i = 0, edge = 0; i < boxes.length && off >= 0; edge += boxes[i].w + THUMB_GAP, i++)
-          if (off >= edge && off <= edge + boxes[i].w) { this.openImages(row.paths, i); break; }
+          if (off >= edge && off <= edge + boxes[i].w) { this.openImages(row.paths, i, cx); break; }
       } else {
         const off = x === undefined ? -1 : this.edges().right - x;
         for (let i = boxes.length - 1, edge = 0; i >= 0 && off >= 0; edge += boxes[i].w + THUMB_GAP, i--)
-          if (off >= edge && off <= edge + boxes[i].w) { this.openImages(row.paths, i); break; }
+          if (off >= edge && off <= edge + boxes[i].w) { this.openImages(row.paths, i, cx); break; }
       }
     }
     else if (row.kind === "video") this.openVideo(row.path);
@@ -4030,7 +4028,7 @@ export default class Chat extends View {
         const imgs = this.files.filter((x) => x.image).map((x) => x.path);
         const tile = f.image
           ? this.thumb(t, f.path).id(`file-${i}`).cursor_pointer()
-            .on_click((_e, cx) => { cx.stop_propagation(); this.openImages(imgs, imgs.indexOf(f.path)); })
+            .on_click((_e, cx) => { cx.stop_propagation(); this.openImages(imgs, imgs.indexOf(f.path), cx); })
           // Not an image: a tile of the same size with its icon and a short name.
           : v_flex().id(`file-${i}`).size(THUMB).flex_none().px(4).gap(3).items_center().justify_center().rounded(8)
             .border_1().border_color(t.border).bg(t.surface)
@@ -4052,7 +4050,9 @@ export default class Chat extends View {
     const v = this.views[path];
     const box = div().relative().size(THUMB).flex_none().rounded(8).overflow_hidden().bg(t.raised);
     const edge = div().absolute().inset_0().rounded(8).border_1().border_color(t.foreground + "1a");
-    if (!v) return box.child(edge);
+    if (!v) return box
+      .when(v === null, (el) => el.flex().items_center().justify_center().px(3).whitespace_normal().text_center().text_size(10).text_color(t.muted).child("Retry preview"))
+      .child(edge);
     const c = attach.cover(v.w, v.h, THUMB);
     return box.child(image(v.rel).absolute().left(c.left).top(c.top).w(c.w).h(c.h)).child(edge);
   }
@@ -4072,6 +4072,7 @@ export default class Chat extends View {
     const v = this.views[b.path];
     return div().relative().w(b.w).h(b.h).flex_none().rounded(8).overflow_hidden().bg(t.raised)
       .when(Boolean(v), (el) => el.child(image(v.rel).size_full()))
+      .when(v === null, (el) => el.flex().items_center().justify_center().p(6).whitespace_normal().text_center().text_size(12).text_color(t.muted).child("Preview unavailable · Click to retry"))
       .child(div().absolute().inset_0().rounded(8).border_1().border_color(t.foreground + "1a"));
   }
 
@@ -4082,7 +4083,8 @@ export default class Chat extends View {
     for (const p of want) this.viewAsked.add(p);
     // Asked from render: start it right after.
     cx.timer.after(0, (cx) => cx.spawn(async (cx) => {
-      Object.assign(this.views, await attach.viewable(want));
+      const ready = await attach.viewable(want);
+      for (const p of want) this.views[p] = ready[p] ?? null;
       cx.notify();
     }));
   }
@@ -4173,7 +4175,15 @@ export default class Chat extends View {
   }
 
   // The viewer (mods/chat-image) on these images, from the i-th.
-  openImages(paths, i) {
+  openImages(paths, i, cx) {
+    const path = paths[i];
+    if (this.views[path] === null) {
+      delete this.views[path];
+      this.viewAsked.delete(path);
+      this.needViews([path], cx);
+      cx.notify();
+      return;
+    }
     const all = paths.map((p) => this.views[p] ? { ...this.views[p], name: p.split("/").pop(), path: p } : null);
     const images = all.filter(Boolean);
     if (!images.length) return;

@@ -35,7 +35,7 @@ core/send.js: chat
 core/delivery.js: chat
 core/assistant-health.js: chat
 core/person.js: chat shepherdr-settings tabs-tasks
-core/spaces.js: chat spaces-chat shepherdr-settings jump pane-chat tasks newspace coordinator menu-tasks new-menu-tasks tabs-tasks workspace-status-chat
+core/spaces.js: tasks-menu chat spaces-chat shepherdr-settings jump pane-chat tasks newspace coordinator menu-tasks new-menu-tasks tabs-tasks workspace-status-chat
 core/sidebar-icons.js: spaces-chat
 core/autopilot.js: pane-chat shepherdr-settings
 core/chat-reader.js: chat
@@ -76,3 +76,4 @@ usage.js: tabs-tasks chat shepherdr-settings artifacts jump accept-card toasts
 core/usage.js: tabs-tasks chat shepherdr-settings artifacts jump accept-card toasts
 dirs.js: accept-card artifacts chat chat-models coordinator jump menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks task-browser tasks toasts workspace-status-chat
 core/paths.js: accept-card artifacts chat chat-models coordinator jump menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks task-browser tasks toasts workspace-status-chat
+task-navigation.js: chat jump tasks tasks-menu spaces-chat tabs-tasks workspace-status-chat

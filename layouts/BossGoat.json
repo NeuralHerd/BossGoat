@@ -36,9 +36,20 @@
                 "weight": 1
               },
               "min": 90
+            },
+            {
+              "id": "tasks-list",
+              "type": "block",
+              "content": {
+                "mod": "tasks"
+              },
+              "size": {
+                "weight": 1
+              },
+              "min": 220
             }
           ],
-          "resizable": false
+          "resizable": true
         },
         {
           "id": "sidebar-footer",
@@ -82,37 +93,131 @@
           "type": "row",
           "children": [
             {
-              "id": "main",
-              "type": "block",
-              "content": {
-                "tab": "active",
-                "pane": {
-                  "header": {
-                    "content": {
-                      "mod": "pane-chat"
-                    },
-                    "reveal": "always",
-                    "height": 30,
-                    "position": "top"
+              "id": "tasks",
+              "type": "stack",
+              "children": [
+                {
+                  "id": "main",
+                  "type": "block",
+                  "content": {
+                    "tab": "active",
+                    "pane": {
+                      "header": {
+                        "content": {
+                          "mod": "pane-chat"
+                        },
+                        "reveal": "always",
+                        "height": 30,
+                        "position": "top"
+                      },
+                      "background": "#f9f9fa00",
+                      "border": {
+                        "width": 1,
+                        "color": "border"
+                      },
+                      "focus": {
+                        "width": 1,
+                        "color": "accent"
+                      },
+                      "radius": 10,
+                      "gap": 8,
+                      "lone": true
+                    }
                   },
-                  "background": "#f9f9fa00",
+                  "background": {
+                    "image": "mods/chat/bossgoat-background.png",
+                    "fit": "cover"
+                  }
+                },
+                {
+                  "id": "tasks-thread",
+                  "type": "column",
+                  "children": [
+                    {
+                      "id": "tasks-thread-head",
+                      "type": "block",
+                      "content": {
+                        "mod": "chat",
+                        "props": {
+                          "panel": true,
+                          "head": true
+                        }
+                      },
+                      "size": {
+                        "px": 127
+                      }
+                    },
+                    {
+                      "id": "tasks-thread-body",
+                      "type": "stack",
+                      "children": [
+                        {
+                          "id": "tasks-thread-chat",
+                          "type": "block",
+                          "content": {
+                            "mod": "chat",
+                            "props": {
+                              "panel": true
+                            }
+                          }
+                        },
+                        {
+                          "id": "tasks-thread-term",
+                          "type": "block",
+                          "content": {
+                            "agent": "focused"
+                          },
+                          "background": "#f9f9fa00"
+                        },
+                        {
+                          "id": "tasks-thread-pr",
+                          "type": "block",
+                          "content": {
+                            "mod": "task-pr"
+                          }
+                        },
+                        {
+                          "id": "tasks-thread-browser",
+                          "type": "column",
+                          "children": [
+                            {
+                              "id": "tasks-thread-browser-host",
+                              "type": "block",
+                              "size": {
+                                "weight": 1
+                              },
+                              "content": {
+                                "mod": "task-browser"
+                              }
+                            }
+                          ],
+                          "resizable": false
+                        },
+                        {
+                          "id": "tasks-thread-artifacts",
+                          "type": "block",
+                          "content": {
+                            "mod": "task-artifacts"
+                          }
+                        }
+                      ],
+                      "active": "tasks-thread-chat",
+                      "background": {
+                        "image": "mods/chat/bossgoat-background.png",
+                        "fit": "cover"
+                      }
+                    }
+                  ],
+                  "background": "background",
                   "border": {
                     "width": 1,
                     "color": "border"
                   },
-                  "focus": {
-                    "width": 1,
-                    "color": "accent"
-                  },
                   "radius": 10,
-                  "gap": 8,
-                  "lone": true
+                  "resizable": false
                 }
-              },
-              "background": {
-                "image": "mods/chat/bossgoat-background.png",
-                "fit": "cover"
-              }
+              ],
+              "active": "main"
             },
             {
               "id": "panel",
@@ -138,107 +243,6 @@
                       "content": {
                         "mod": "changes"
                       }
-                    },
-                    {
-                      "id": "tasks",
-                      "type": "stack",
-                      "children": [
-                        {
-                          "id": "tasks-list",
-                          "type": "block",
-                          "content": {
-                            "mod": "tasks"
-                          }
-                        },
-                        {
-                          "id": "tasks-thread",
-                          "type": "column",
-                          "children": [
-                            {
-                              "id": "tasks-thread-head",
-                              "type": "block",
-                              "content": {
-                                "mod": "chat",
-                                "props": {
-                                  "panel": true,
-                                  "head": true
-                                }
-                              },
-                              "size": {
-                                "px": 127
-                              }
-                            },
-                            {
-                              "id": "tasks-thread-body",
-                              "type": "stack",
-                              "children": [
-                                {
-                                  "id": "tasks-thread-chat",
-                                  "type": "block",
-                                  "content": {
-                                    "mod": "chat",
-                                    "props": {
-                                      "panel": true
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "tasks-thread-term",
-                                  "type": "block",
-                                  "content": {
-                                    "agent": "focused"
-                                  },
-                                  "background": "#f9f9fa00"
-                                },
-                                {
-                                  "id": "tasks-thread-pr",
-                                  "type": "block",
-                                  "content": {
-                                    "mod": "task-pr"
-                                  }
-                                },
-                                {
-                                  "id": "tasks-thread-browser",
-                                  "type": "column",
-                                  "children": [
-                                    {
-                                      "id": "tasks-thread-browser-host",
-                                      "type": "block",
-                                      "size": {
-                                        "weight": 1
-                                      },
-                                      "content": {
-                                        "mod": "task-browser"
-                                      }
-                                    }
-                                  ],
-                                  "resizable": false
-                                },
-                                {
-                                  "id": "tasks-thread-artifacts",
-                                  "type": "block",
-                                  "content": {
-                                    "mod": "task-artifacts"
-                                  }
-                                }
-                              ],
-                              "active": "tasks-thread-chat",
-                              "background": {
-                                "image": "mods/chat/bossgoat-background.png",
-                                "fit": "cover"
-                              }
-                            }
-                          ],
-                          "background": "background",
-                          "border": {
-                            "width": 1,
-                            "color": "border"
-                          },
-                          "radius": 10,
-                          "resizable": false
-                        }
-                      ],
-                      "active": "tasks-list"
                     },
                     {
                       "id": "artifacts",
@@ -288,7 +292,7 @@
                       "active": "artifacts-list"
                     }
                   ],
-                  "active": "tasks"
+                  "active": "files"
                 }
               ],
               "resizable": false,

@@ -1,3 +1,4 @@
+import { showTaskView, showMain } from "./task-navigation.js";
 // Jump (Ctrl+K, as Shepherdr's ⌘K): one box that finds a space, a task, an artifact or a machine and
 // goes there. Opened with mod.open:jump (again closes it), a popup at the top of the window.
 // Type to filter: every word typed must be in the item somewhere, any case (Shepherdr's
@@ -95,18 +96,14 @@ const find = (node, id) => {
 // A task's worker chat inside the Tasks panel (mods/chat/panel.js openTaskThread).
 function openTaskThread(terminal, task, title) {
   setShared("tasks.thread", { terminal, task: task ?? null, title: title ?? null, at: Date.now() });
-  run("layout.select", { stack: "panel-body", child: "tasks" });
-  run("layout.select", { stack: "tasks", child: "tasks-thread" });
+  showTaskView();
   if (find(layout(), "tasks-thread-body")) run("layout.select", { stack: "tasks-thread-body", child: "tasks-thread-chat" });
-  run("layout.show", { id: "panel" });
 }
 
 // The Tasks list, searched for one task (mods/tasks/main.js reads shared "tasks.searchreq").
 function showInTaskList(q) {
   setShared("tasks.searchreq", { q, at: Date.now() });
-  run("layout.select", { stack: "panel-body", child: "tasks" });
-  run("layout.select", { stack: "tasks", child: "tasks-list" });
-  run("layout.show", { id: "panel" });
+  showTaskView("tasks-list");
 }
 
 export default class Jump extends View {
@@ -261,10 +258,10 @@ export default class Jump extends View {
       return;
     }
     closeOverlay(props().overlay);
-    if (r.kind === "space") run("space.select", { id: r.id });
+    if (r.kind === "space") { showMain(); run("space.select", { id: r.id }); }
     else if (r.kind === "machine") {
       const s = spaces().find((x) => (x.machine ?? null) === (r.name ?? null));
-      if (s) run("space.select", { id: s.id });
+      if (s) { showMain(); run("space.select", { id: s.id }); }
       else run("app.settings", { section: "machines" });
     } else if (r.kind === "task") this.openTask(r);
     else if (r.kind === "artifact") this.openArtifact(r.art);

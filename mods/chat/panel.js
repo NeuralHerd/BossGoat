@@ -1,3 +1,4 @@
+import { showTaskView, showTaskAssistant, tasksInMain } from "./task-navigation.js";
 // A task's chat inside the Tasks panel (the person's decision: drill in, never a side chat).
 // The layout's "tasks" stack holds the list ("tasks-list", mod tasks) and this view
 // ("tasks-thread", a column): a header ("tasks-thread-head", mod chat with props { panel: true,
@@ -67,14 +68,12 @@ export function hasTaskThread(node) {
 
 export function openTaskThread(terminal, task, title) {
   setShared("tasks.thread", { terminal, task: task ?? null, title: title ?? null, at: Date.now() });
-  run("layout.select", { stack: "panel-body", child: STACK });
-  run("layout.select", { stack: STACK, child: THREAD });
+  showTaskView();
   // A task opens on its chat; the header's switch shows its terminal.
   if (find(layout(), BODY)) run("layout.select", { stack: BODY, child: CHAT });
-  run("layout.show", { id: "panel" });
 }
 
-export const backToTasks = () => run("layout.select", { stack: STACK, child: LIST });
+export const backToTasks = () => tasksInMain() ? showTaskAssistant() : showTaskView(LIST);
 
 // Chat / Terminal: which the view shows now (the body stack's child).
 export const terminalShown = () => find(layout(), BODY)?.active === TERM;
@@ -459,7 +458,7 @@ export class PanelHost {
         .text_size(TEXT.label).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click((_e, cx) => { cx.stop_propagation(); backToTasks(); })
         .child(svg("mods/workspace-chrome/chevron-left.svg").size(14).flex_none())
-        .child("Tasks"))
+        .child(tasksInMain() ? "Assistant" : "Tasks"))
       .child(div().flex_1())
       // A task's own base (herdr-task add --base), where it merges into; the folder's default isn't shown.
       .when(Boolean(this.rec?.base_set && this.rec?.base), (el) => el.child(div().id("thread-base").flex_none().max_w(160).truncate().pr(4)

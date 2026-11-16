@@ -1,3 +1,4 @@
+import { showTaskView } from "./task-navigation.js";
 // The Tasks panel's small menus (mods/tasks), as popups at the pointer in the look of Herdr's
 // own menu. props().menu:
 //   "group"   the header's ⋯: group the list For you, by space or by status (shared "tasks.group",
@@ -25,6 +26,8 @@ const GROUPS = [{ key: "you", label: "For you" }, { key: "space", label: "Space"
 function sections() {
   const p = props() ?? {};
   if (p.menu === "row") return rowSections(p);
+  if (p.menu === "scope") return [{ title: null, items: p.items ?? [], current: p.current,
+    pick: (key) => setShared("tasks.scopereq", { key, at: Date.now() }) }];
   if (p.menu === "filter") return [{ title: null, items: p.items ?? [], current: p.current,
     pick: (key) => setShared("tasks.filterreq", { key, at: Date.now() }) }];
   const current = GROUPS.some((g) => g.key === p.current) ? p.current : "you";
@@ -58,7 +61,7 @@ function rowPick(p, key) {
   }
   if (it.id === "start-now" && p.preview) {
     setShared("tasks.thread", { ...p.preview, terminal: null, note: "Review launch settings before starting.", at: Date.now() });
-    run("layout.select", { stack: "tasks", child: "tasks-thread" });
+    showTaskView();
     run("layout.select", { stack: "tasks-thread-body", child: "tasks-thread-chat" });
     return;
   }
