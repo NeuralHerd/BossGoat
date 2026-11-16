@@ -36,7 +36,9 @@ What goes where (each under --root, default your home):
 
 Never overwritten: a mod, layout or lib file that isn't ours (it refuses, naming each; --adopt backs
 them up and takes them over), a key you set (unless you say yes), a file you changed since the last
-install (the new copy goes beside it as <file>.new; a mod file Shepherdr changed too is replaced, yours backed up). Everything it replaces goes to
+install (the new copy goes beside it as <file>.new; a mod file Shepherdr changed too is replaced, yours backed up).
+BossGoat's Tasks layout is migrated in place, preserving custom nodes and appearance, with a backup first.
+Everything it replaces goes to
 .config/herdr-app/.shepherdr-backup/<time>/ first; uninstall puts it back. What it installed is
 recorded in .config/herdr-app/data/shepherdr/installed.json (a sha256 per file), so running it again
 changes only what changed. While it replaces a helper or template, a sync hold (sync-hold in
@@ -699,6 +701,90 @@ class Run:
         return dest
 
 
+def migrate_tasks_layout(current, shipped):
+    """Move existing nodes, keeping their look and Herdr's separate click state."""
+    def index(tree):
+        found = {}
+        def visit(node, parent=None):
+            if not isinstance(node, dict) or not isinstance(node.get("children", []), list):
+                raise ValueError("invalid layout node")
+            ident = node.get("id")
+            if ident:
+                if ident in found:
+                    raise ValueError(f"duplicate node {ident}")
+                found[ident] = (node, parent)
+            for child in node.get("children", []):
+                visit(child, node)
+        visit(tree)
+        return found
+
+    try:
+        tree = json.loads(current)
+        nodes = index(tree)
+        defaults = index(json.loads(shipped))
+        sidebar, work, main = [nodes[key][0] for key in ("sidebar-lists", "work-body", "main")]
+        tasks, task_parent = nodes.get("tasks", (None, None))
+        listing, list_parent = nodes.get("tasks-list", (None, None))
+        main_parent = nodes["main"][1]
+        if sidebar.get("type") != "column" or work.get("type") != "row":
+            raise ValueError("sidebar-lists or work-body has an unsupported type")
+        if tasks is not None and tasks.get("type") != "stack":
+            raise ValueError("tasks is not a stack")
+        if tasks is not None and task_parent is work and main_parent is tasks and list_parent is sidebar:
+            return current
+        if main_parent is not work and (tasks is None or main_parent is not tasks):
+            raise ValueError("main is outside work-body and tasks")
+        if tasks is not None and task_parent is not work and task_parent is not nodes.get("panel-body", (None,))[0]:
+            raise ValueError("tasks is outside work-body and panel-body")
+
+        def detach(node, parent):
+            parent["children"].remove(node)
+            if parent.get("active") == node["id"]:
+                parent["active"] = next((c["id"] for c in parent["children"]), None)
+
+        if tasks is None:
+            tasks = {k: v for k, v in defaults["tasks"][0].items() if k != "children"}
+            tasks["children"] = []
+        if listing is None:
+            listing = defaults["tasks-list"][0]
+        elif list_parent is not sidebar:
+            detach(listing, list_parent)
+        if list_parent is not sidebar:
+            position = next((i + 1 for i, c in enumerate(sidebar["children"]) if c.get("id") == "spaces"), len(sidebar["children"]))
+            sidebar["children"].insert(position, listing)
+        listing.setdefault("size", {"weight": 1})
+        listing.setdefault("min", 220)
+        if listing.get("hidden"):
+            listing["hidden"] = False
+        sidebar["resizable"] = True
+
+        if main_parent is work:
+            if task_parent is not None:
+                detach(tasks, task_parent)
+            position = work["children"].index(main)
+            work["children"][position] = tasks
+            tasks["children"].insert(0, main)
+            for field in ("size", "min", "max"):
+                if field in main:
+                    tasks.setdefault(field, main[field])
+            tasks["active"] = "main"
+        elif task_parent is not work:
+            raise ValueError("the main task stack is outside work-body")
+        if tasks.get("hidden"):
+            tasks["hidden"] = False
+        if "tasks-thread" not in nodes:
+            tasks["children"].append(defaults["tasks-thread"][0])
+        elif nodes["tasks-thread"][1] is not tasks:
+            raise ValueError("tasks-thread is outside tasks")
+        if tasks.get("active") not in [c.get("id") for c in tasks["children"]]:
+            tasks["active"] = "main"
+        index(tree)
+        return (json.dumps(tree, indent=2, ensure_ascii=False) + "\n").encode()
+    except (ValueError, KeyError, TypeError) as error:
+        raise Stop(f"Cannot migrate layouts/BossGoat.json safely: {error}. "
+                   "The layout was left unchanged; restore its sidebar-lists, work-body and main nodes, then retry.")
+
+
 def plan_files(r, rec, items, adopt):
     """For each source file: what to do. -> (actions, clashes). An action: (rel, how, data, mode)
     with how one of new, update, same, adopt, keep (the person's; .new beside it)."""
@@ -1114,6 +1200,14 @@ def cmd_install(a, update=False):
             how = "old"
         return (g, rel, how, data, mode)
     actions = [settle(*x) for x in actions]
+    migrations = {}
+    for _, rel, how, data, _ in actions:
+        if rel == f"{APP}/layouts/BossGoat.json" and how != "new":
+            current = read(r.p(rel))
+            migrated = migrate_tasks_layout(current, data)
+            if migrated != current:
+                migrations[rel] = (current, migrated)
+    actions = [(g, rel, "migrate" if rel in migrations else how, data, mode) for g, rel, how, data, mode in actions]
     shipped = {x[1] for x in actions}
     # Shipped before, not any more (a file, or a mod dropped from lib/addons.json): retired. Changed or not, it goes;
     # a changed one is backed up first and said (#895: these stayed forever, and doctor then failed on them).
@@ -1175,7 +1269,19 @@ def cmd_install(a, update=False):
             rec.setdefault("replaced", {}).setdefault(rel, r.backup(rel))
         elif how == "update" and g == "template":
             r.backup(rel)
-        if how == "keep":
+        if how == "migrate":
+            current, migrated = migrations[rel]
+            if read(r.p(rel)) != current:
+                raise Stop(f"{rel} changed during the update. Your latest layout was kept; retry the update.")
+            backup = r.backup(rel)
+            if rel not in old_files:
+                rec.setdefault("replaced", {}).setdefault(rel, backup)
+            atomic_write(r.p(rel), migrated, mode)
+            if fsha(rel, migrated) != fsha(rel, data):
+                atomic_write(r.p(rel) + ".new", data, mode)
+            r.notes.append("migrated BossGoat Tasks into the sidebar; customizations and saved layout clicks kept. "
+                           "Herdr reloads the layout automatically.")
+        elif how == "keep":
             atomic_write(r.p(rel) + ".new", data, mode)
             r.notes.append(f"kept your {rel}; Shepherdr's is beside it as {os.path.basename(rel)}.new")
         elif how == "old":

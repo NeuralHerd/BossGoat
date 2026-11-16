@@ -139,6 +139,12 @@ class Updates(unittest.TestCase):
             self.assertTrue(U.status(str(self.root))["needs_install"])
             self.assertEqual(dest.read_text(), "my custom instructions")
 
+    def test_current_and_success_messages_do_not_require_reopening_the_app(self):
+        message = U.current_message({"preserved_files": ["custom-layout"]})
+        self.assertIn("preserved customization", message)
+        self.assertIn("reload automatically", message)
+        self.assertNotIn("Reopen", message)
+
     def test_old_install_record_never_invents_an_installed_revision(self):
         got = U.status(str(self.root))
         self.assertIsNone(got["installed_revision"])
@@ -195,6 +201,7 @@ class Updates(unittest.TestCase):
         self.assertIn("keep", calls[0])
         self.assertNotIn("--force", calls[0])
         self.assertEqual(U.status(str(self.root))["state"], "current")
+        self.assertIn("reload automatically", U.I.json_file(U.path(str(self.root), "json"))["message"])
 
     def test_incomplete_installer_does_not_report_success_even_with_zero_exit(self):
         actual = U.subprocess.run

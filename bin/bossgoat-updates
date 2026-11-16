@@ -90,7 +90,7 @@ def matches(rec, src, preserved=None):
 def current_message(local):
     kept = len(local.get("preserved_files", []))
     return (f"Up to date with {kept} preserved customizations." if kept else "Installed files match the repository.") + \
-        " Reopen BossGoat after an update to load its panels."
+        " Panels reload automatically in the BossGoat layout."
 
 
 def local_status(root):
@@ -217,7 +217,7 @@ def install_job(root):
     if process.returncode or "NOT DONE:" in process.stdout:
         raise UpdateError("The update did not finish. See the update log, then check again to retry.")
     save(root, {**result, "state": "current", "version": record(root).get("version"), "available": False,
-                "message": "BossGoat was updated. Reopen BossGoat to load its updated panels.", "log": path(root, "log")})
+                "message": "BossGoat was updated. Panels reload automatically in the BossGoat layout.", "log": path(root, "log")})
 
 
 def main(argv):

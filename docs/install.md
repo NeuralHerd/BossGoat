@@ -41,7 +41,13 @@ PR, switch the checkout back to `main`; GitHub may delete the PR branch. A missi
 reported separately from a connection failure.
 
 The updater refuses dirty, detached or diverged source checkouts and never resets your branch.
-It uses the existing installer’s backup and customization rules. From a terminal:
+Updates migrate the Tasks list into the sidebar and task conversations into the main area, including
+customized BossGoat layouts. The installer moves existing nodes, backs up the old layout, and keeps
+wallpaper, panel styling, custom blocks, shortcuts and saved layout clicks. Herdr reloads the layout
+while it is open; no restart is required. An unsupported layout stops the update with a specific error
+instead of replacing it with the default. Repeated updates leave an already migrated layout alone.
+
+Other files use the existing installer’s backup and customization rules. From a terminal:
 
 ```bash
 bossgoat updates check
