@@ -1,6 +1,6 @@
 // The rename dialog's icon picker (rename.js): the chat's emoji picker (mods/chat-react, copied:
 // categories on top that jump to their section, a search over every emoji's name and words, then
-// the sections), with a reset at the bottom ("#" for a space, the folder for a section). Opened as
+// the sections), with a reset to the first letter at the bottom. Opened as
 // a popup with props { view: "icon", for (the dialog's overlay), current, section, machine ("server" |
 // "monitor": a machine's), width, height }.
 // The pick goes back to the dialog through shared "spaces-chat.iconpick" = { for, emoji, at };
@@ -10,6 +10,7 @@ import { div, svg } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input, VirtualListScrollHandle, v_virtual_list, Scrollbar } from "gpui-base";
 import { theme, props, closeOverlay, setShared, appHome, readTextFile, settings } from "herdr";
 import { PICK } from "./rename.js";
+import { spaceAvatar } from "./avatar.js";
 
 const PER = 9, CELL = 36, HEAD = 28, PAD = 6;
 
@@ -130,16 +131,14 @@ export class IconPicker {
             if (x) this.pick(x.e);
           }))
         .child(Scrollbar.vertical("emoji-list").absolute().inset_0()))
-      // Back to the plain "#", a section's folder, or a machine's server / monitor.
+      // Back to the first letter, or a machine's server / monitor.
       .child(h_flex().h(40).flex_none().px(PAD).items_center().border_t(1).border_color(t.border)
         .child(h_flex().id("reset").h(28).px(8).gap(8).items_center().rounded(6)
           .text_color(now ? t.foreground : t.dim)
           .when(Boolean(now), (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click(() => this.pick(null)))
           .child(this.p.machine
             ? svg(`mods/workspace-chrome/${this.p.machine}.svg`).size(13).flex_none()
-            : this.p.section
-            ? svg("mods/workspace-chrome/folder.svg").size(13).flex_none()
-            : div().w(14).text_center().text_size(15).child("#"))
-          .child(this.p.machine ? `Reset to ${this.p.machine} icon` : this.p.section ? "Reset to folder" : "Reset to #")));
+            : spaceAvatar(this.p.name, this.p.space, t))
+          .child(this.p.machine ? `Reset to ${this.p.machine} icon` : "Use first letter")));
   }
 }

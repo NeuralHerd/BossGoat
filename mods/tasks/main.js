@@ -131,7 +131,7 @@ export default class Tasks extends View {
         const c = await Promise.race([cmd, cx.sleep(5000)]);
         if (c === undefined) continue;
         cmd = null;
-        if (c === "search") { this.filtersOpen = true; this.query.focus(); }
+        if (c === "search") { if (this.compact) this.expandSidebar(); this.filtersOpen = true; this.query.focus(); }
         // pane.go landed on this panel (mod.json "focusable"): the list takes the keyboard (F: the search field).
         else if (c === "focus") { holdKeys("tasks"); this.listFocus.focus(); }
         else if (GROUP_BY.includes(c) || ["folder", "machine", "machine-space"].includes(c)) setShared("tasks.group", groupBy(c));
@@ -272,6 +272,7 @@ export default class Tasks extends View {
   draw(cx) {
     spaceAt = null;
     const t = theme();
+    this.compact = tasksInMain() && this.width < 160;
     // A toast's "needs you" (inbox.js showInbox): Needs you opens.
     const show = shared("tasks.show");
     if (show?.at && show.at !== this.shownAt) { this.shownAt = show.at; this.pickFilter("needs"); this.fold("needs", false); }
@@ -282,7 +283,7 @@ export default class Tasks extends View {
     if (scope?.at && scope.at !== this.scopeAt) { this.scopeAt = scope.at; this.scope = scope.key || null; this.jumpQ = null; localStorage.setItem("bossgoat.tasks.space", this.scope ?? ""); }
     // Ctrl+K's jump (mods/jump) to a task with no chat to open: the list, searched for it, all statuses.
     const sq = shared("tasks.searchreq");
-    if (sq?.at && sq.at !== this.searchAt) { this.searchAt = sq.at; this.pickFilter("all"); this.filtersOpen = true; this.archivedOpen = false; this.query.set_value(String(sq.q ?? "")); this.jumpQ = String(sq.q ?? ""); }
+    if (sq?.at && sq.at !== this.searchAt) { this.searchAt = sq.at; if (this.compact) this.expandSidebar(); this.pickFilter("all"); this.filtersOpen = true; this.archivedOpen = false; this.query.set_value(String(sq.q ?? "")); this.jumpQ = String(sq.q ?? ""); }
     const here = this.scope && !(this.jumpQ && this.query.value() === this.jumpQ)
       ? spaces().find((s) => s.id === this.scope) ?? { id: this.scope, name: "Unavailable space" } : null;
     let placed = this.lists.flatMap((l) => l.tasks.map((task) => this.place(l, task)));
@@ -349,12 +350,18 @@ export default class Tasks extends View {
     const filter = this.filter === "all" || ORDER.includes(this.filter) ? this.filter : "working";
     // What rows say of where they are: their space, never their machine (SHEP-98: a quiet detail);
     // by space, nothing (the headings say it). For you's space rows sit under their heading (bare).
-    this.names = filter === "all" && by === "space" ? { machine: false, space: false } : { machine: false, space: true };
+    this.names = !this.compact && filter === "all" && by === "space" ? { machine: false, space: false } : { machine: false, space: true };
     // Shepherdr settings' "Where on task rows" off (shared "tasks.place" false): rows say none.
     if (shared("tasks.place") === false) this.names = { machine: false, space: false };
     // A status's rows, made only when shown (by status, or its chip).
     const rowsOf = { needs: needRows, automations: autos.map(([l, a]) => this.autoRow(l, a, placed, t)) };
     const rowsFor = (s) => (rowsOf[s] ??= (s === "done" && filter === "done" ? [...tasksOf[s], ...found] : tasksOf[s]).map((p) => this.row(p, t)));
+    if (this.compact) {
+      const rows = this.archivedOpen ? found.map((p) => this.row(p, t)) : filter === "all"
+        ? [...needRows, ...sorted(placed).map((p) => this.row(p, t)), ...rowsOf.automations, ...(q ? found.map((p) => this.row(p, t)) : [])] : rowsFor(filter);
+      const label = this.archivedOpen ? "Archived" : filter === "all" ? "All statuses" : STATUS[filter] ?? "Automations";
+      return this.rail(rows, label, q, t);
+    }
     // Searching, every group shows whole and open (folded or not).
     const open = Boolean(q);
     const note = (text) => div().px(18).py(28).text_center().text_size(TEXT.label).text_color(t.dim).child(text);
@@ -448,6 +455,33 @@ export default class Tasks extends View {
           .child(div().flex_1().text_size(TEXT.label).text_color(t.muted).child(this.error))))
         .when(!this.ready && !this.error, (el) => el.child(div().px(18).py(28).text_center().text_size(TEXT.label).text_color(t.dim).child("Reading tasks…")))
         .children(dependencies && !this.archivedOpen ? [this.dependencies(allPlaced, graphSelected, t)] : body));
+  }
+
+  expandSidebar() {
+    setShared("sidebar.collapsed", false);
+    run("layout.resize", { id: "sidebar", px: Math.max(160, shared("sidebar.width") ?? 268) });
+  }
+
+  rail(rows, label, query, t) {
+    const hint = [`Tasks · ${label}`, query ? `Filter: ${query}` : null, "Expand for filters and views"].filter(Boolean).join("\n");
+    const what = label === "All statuses" ? "tasks" : label === "Automations" ? "automations" : label === "Needs you" ? "tasks that need you" : `${label.toLowerCase()} tasks`;
+    const note = this.error || (!this.ready ? "Reading tasks…" : rows.length ? null : `No ${what}${query ? " match the filter" : ""}.`);
+    return v_flex().id("tasks").size_full().min_h(0).overflow_hidden().border_t(1).border_color(t.border)
+      .bg(shared("layout") === "BossGoat" ? "#00000000" : t.chrome)
+      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
+      .child(h_flex().h(34).flex_none().items_center().justify_center()
+        .child(this.iconButton("tasks-expand", hint, "mods/tasks/tasks.svg", false, t, () => this.expandSidebar())))
+      .child(v_flex().id("task-list").flex_1().min_h(0).overflow_y_scrollbar().px(4).py(6).gap(4)
+        .track_focus(this.listFocus)
+        .on_mouse_down("left", () => { holdKeys("tasks"); this.listFocus.focus(); })
+        .on_key_down((e, cx) => {
+          if (e.keystroke === "f") { cx.stop_propagation(); this.expandSidebar(); this.filtersOpen = true; this.query.focus(); cx.notify(); }
+          else if (e.keystroke === "escape" && this.archivedOpen) { cx.stop_propagation(); this.archivedOpen = false; cx.notify(); }
+        })
+        .when(Boolean(note), el => el.child(div().h(32).flex_none().flex().items_center().justify_center()
+          .tooltip(note).accessibility_label(note).text_color(this.error ? red() : t.dim)
+          .child(svg("mods/tasks/circle.svg").size(14))))
+        .children(rows));
   }
 
   dependencies(all, selected, t) {
@@ -931,9 +965,21 @@ export default class Tasks extends View {
   //   a dot (it gives way first);
   // - the end, centred on the row: the one thing to act on or watch: Review or an automation's next
   //   run (`meta`).
-  // A row with nothing under its title is one line. Nothing shows on hover: no tooltips (SHEP-25).
+  // A row with nothing under its title is one line; the compact rail puts its details on hover.
   // `pin`: { key, on }: Pin / Unpin in the row's right-click menu.
   line(id, { go, glyph, ref, title, sub, left, leftColor, dim, selected, meta, metaColor, where, action, pin }, t) {
+    if (this.compact) {
+      const label = [ref, title, where, sub, left ? `${left} left` : meta].filter(Boolean).join("\n");
+      return v_flex().id(id).h(38).flex_none().gap(2).items_center().justify_center().rounded(RADIUS.card)
+        .tooltip(label).accessibility_label(label)
+        .when(Boolean(selected), el => el.bg(t.selected))
+        .when(Boolean(pin), el => el.on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.rowMenu(pin); }))
+        .when(Boolean(go), el => el.cursor_pointer().hover(s => s.bg(selected ? t.selected : t.hover))
+          .on_click((_e, cx) => { go(); cx.notify(); }))
+        .child(glyph)
+        .when(Boolean(ref), el => el.child(div().max_w_full().truncate().font_family(ID_FONT).text_size(9)
+          .text_color(selected ? t.foreground : t.dim).child(ref)));
+    }
     // Every second line is at most 40 characters (herdr-task cuts an agent's own; this catches the
     // derived ones: a long queue, a check's message).
     const said = sub ? capital(sub) : null;

@@ -4,7 +4,7 @@
 // shows here until Save. The name field starts focused with its text selected.
 // Enter saves, Esc cancels. A space's name goes through space.rename ("" gives Herdr's own name
 // back); a section needs a name its machine's other sections don't have. New section makes one
-// at the end of its machine's, with the icon picked (none: the folder).
+// at the end of its machine's, with the icon picked (none: its first letter).
 // Opened as a dialog: props { view: "rename", space }, { view: "rename", section } or
 // { view: "rename", new: "section", machine } or { view: "rename", renameMachine: true, machine }.
 // A space's `name`: what the sidebar shows for it (main.js nameOf), its field's placeholder.
@@ -14,6 +14,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, run, shared } from "herdr";
 import { spaces } from "./live.js";
 import { data, iconOf, setIcon, setSectionIcon, renameSection, addSection, nameFree, machineLook, setMachineLook } from "./sections.js";
+import { spaceAvatar } from "./avatar.js";
 import { logSpace } from "./spacelog.js";
 import { dialogFooter, TEXT, RADIUS, H } from "./ui.js";
 
@@ -53,9 +54,10 @@ export class Rename {
     // A space named "~" (as our New space once named home ones) counts as unnamed.
     const value = look ? (look.named ? look.name : "") : this.sec ? this.sec.name : w?.named && w.name !== "~" ? w.name : "";
     const placeholder = this.isMachine ? p.machine ?? "This computer" : this.isSection ? "Section name" : p.name ?? w?.name ?? "Space name";
+    this.defaultName = placeholder;
     this.input = InputState.new({ placeholder, value });
     this.input.on("submit", (_e, cx) => { this.save(); cx.notify(); });
-    this.input.on("change", (_e, cx) => { if (this.error) { this.error = ""; cx.notify(); } });
+    this.input.on("change", (_e, cx) => { this.error = ""; cx.notify(); });
     this.input.on("focus", (_e, cx) => { this.focused = true; cx.notify(); });
     this.input.on("blur", (_e, cx) => { this.focused = false; cx.notify(); });
     const focus = () => { this.input.focus(); this.input.set_selected_range({ start: 0, end: value.length }); };
@@ -100,6 +102,7 @@ export class Rename {
   pick(at) {
     openOverlay({ mod: "spaces-chat", kind: "popup", width: 360, height: 420, at: at ? { x: at.x, y: at.y + at.height + 4 } : "pointer",
       props: { view: "icon", for: this.p.overlay, current: this.icon, section: this.isSection,
+        name: this.input.value().trim() || this.defaultName, space: this.p.space ?? this.p.section,
         machine: this.isMachine ? (this.p.machine ? "server" : "monitor") : null, width: 360, height: 420 } });
   }
 
@@ -111,15 +114,12 @@ export class Rename {
       this.icon = rq.emoji ?? null;
       cx.timer.after(0, () => this.input.focus());
     }
-    // What stands for it in the sidebar: the emoji, else "#" (a space), the folder (a section) or
-    // the server / monitor (a machine).
+    // Preview the same default letter or chosen emoji as the sidebar.
     const mark = this.icon
       ? div().text_size(16).child(this.icon)
       : this.isMachine
         ? svg(`mods/workspace-chrome/${this.p.machine ? "server" : "monitor"}.svg`).size(14).text_color(t.muted)
-      : this.isSection
-        ? svg("mods/workspace-chrome/folder.svg").size(14).text_color(t.muted)
-        : div().text_size(16).text_color(t.muted).child("#");
+      : spaceAvatar(this.input.value().trim() || this.defaultName, this.p.space ?? this.p.section, t);
     const panel = v_flex().id("rename").w_full().flex_none().p(K.pad).rounded(10).border(1).border_color(t.border).bg(t.popover).shadow_lg().text_size(TEXT.body)
       .on_key_down((e) => { if (e.key === "escape") this.cancel(); })
       .child(div().h(K.title).flex_none().text_size(TEXT.title).font_semibold().text_color(t.foreground).child(this.p.new ? "New section" : this.isMachine ? "Rename machine" : this.p.section ? "Rename section" : "Rename space"))

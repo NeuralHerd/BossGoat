@@ -31,6 +31,7 @@ import { on as addonOn } from "./addons.js";
 import { spaceName, gitTail, tilde, sharedNames, inOrder, withOrder, machinesInOrder, machineOrderOf, withMachineOrder } from "./core/spaces.js";
 import { coordinatorTab } from "./coordinator.js";
 import { sidebarIcon } from "./core/sidebar-icons.js";
+import { spaceAvatar } from "./avatar.js";
 import { WORKTREE_RE } from "./core/paths.js";
 import { dirsReady } from "./dirs.js";
 
@@ -82,10 +83,6 @@ const base = (path) => path.replace(/\/+$/, "").split("/").pop();
 // Changes made outside Herdr (an editor's save, a commit in another app): looked
 // for this often, in repos the list shows, while the window is in front.
 const FALLBACK = 60000;
-
-// What a stored color name looks like on an avatar (the same in every mod
-// that draws space avatars): one strong color per hue, light and dark alike.
-const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
 
 // A space speaks up only when something in it needs you.
 export function glyph(status) {
@@ -561,7 +558,7 @@ export default class Spaces extends View {
       .on_mouse_down("right", (e) => openMenu("section", { section: s.id, row: rectOf(e) }))
       .on_mouse_move((_e, cx) => this.drag(`section:${s.id}`, s.machine, cx))
       .child(div().w(22).flex_none().flex().items_center().justify_center()
-        .child(sidebarGlyph(s.icon, "folder")))
+        .child(s.icon ? sidebarGlyph(s.icon) : spaceAvatar(s.name, s.id, t)))
       .when(!collapsed, el => el.child(div().flex_1().min_w(0).truncate().child(s.name))
         .when(needs > 0 || ready > 0, (el) => el.child(countBadge(needs, ready, t.chrome)))
         .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none()))
@@ -729,9 +726,6 @@ export default class Spaces extends View {
     // Notify Off (notify.js): muted, as Slack's muted channels: dimmed, a crossed-out bell; its
     // counts still show.
     const quiet = muted(w.id);
-    const colors = shared("space.colors") ?? {};
-    const color = colors[w.id] ?? "ansi6";
-    const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
     return v_flex()
       .relative()
       .id(`space-${w.id}`)
@@ -758,7 +752,7 @@ export default class Spaces extends View {
           .items_center()
           .when(Boolean(tree), el => el.pl(22).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
           .when(!tree, el => el.child(div().w(22).flex_none().flex().items_center().justify_center().text_color(fresh ? t.foreground : w.active && !quiet ? t.muted : t.dim)
-            .when(quiet && Boolean(iconOf(w.id)), (el) => el.opacity(0.5)).child(sidebarGlyph(iconOf(w.id), "message-square"))))
+            .when(quiet, (el) => el.opacity(0.5)).child(iconOf(w.id) ? sidebarGlyph(iconOf(w.id)) : spaceAvatar(name, w.id, t))))
           .child(nameText(name, fresh, quiet ? t.dim : w.active ? t.foreground : t.muted, t))
           .when(Boolean(this.pilotMark(w, t)), (el) => el.child(this.pilotMark(w, t)))
           .child(g ? this.gitTail(g, tree, name, t, label) : h_flex().flex_1().min_w(0).justify_end().text_size(TEXT.label).text_color(t.dim)
@@ -779,7 +773,7 @@ export default class Spaces extends View {
       .hover(s => s.bg(t.hover))
       .on_click(() => { showMain(); run("space.select", { id: w.id }); })
       .on_mouse_down("right", e => this.menu(w, g, name, e))
-      .child(tree ? svg("mods/workspace-chrome/branch.svg").size(20) : sidebarGlyph(iconOf(w.id), "message-square"))
+      .child(tree ? svg("mods/workspace-chrome/branch.svg").size(20) : iconOf(w.id) ? sidebarGlyph(iconOf(w.id)) : spaceAvatar(name, w.id, t))
       .when(fresh || ["blocked", "working", "done"].includes(w.status), el => el.child(div().absolute().right(4).bottom(4).size(5).rounded_full().bg(fresh ? t.accent : tone(t, w.status))));
   }
 
