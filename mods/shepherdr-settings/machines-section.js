@@ -18,6 +18,7 @@ import { HOLD, machineDetails, pollNow } from "./machines.js";
 import { LOCAL_MACHINE } from "./coordinator.js";
 import { TEXT, button, link, toggleSwitch } from "./ui.js";
 import { dirsReady } from "./dirs.js";
+import { artifactLocationRow } from "./artifact-location.js";
 // The rows' words, a machine block's and Home Assistant's lines: core/settings.js, shared with the web app.
 import { MACHINES, OLD_NAMES, SECTIONS, SET_FOR_MACHINE, RESET, SAME_AS_ALL_MACHINES, machinesOwn, homeAbout, machineLabel } from "./core/settings.js";
 
@@ -150,6 +151,7 @@ function machineBlock(view, t, k) {
   return v_flex().id(`mach-${k}`)
     .child(div().pt(26).pb(10).text_size(TEXT.body).font_semibold().text_color(t.foreground).child(label(k)))
     .child(div().pb(12).border_b(1).border_color(t.border).child(machineDetails(t, toMachine(k))))
+    .when(k === LOCAL_MACHINE, (el) => el.child(artifactLocationRow(view, t)))
     .child(homeRow(view, t, k))
     .when(!open, (el) => el.child(view.row(t, MACHINES.own.title, MACHINES.own.about,
       button(`ml-own-${k}`, MACHINES.own.button, { onClick: () => { view._machOpen[k] = true; } }))))

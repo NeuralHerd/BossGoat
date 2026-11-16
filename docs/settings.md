@@ -41,6 +41,7 @@ drops the space's own, and it inherits again. A few settings are one for every s
 | Secrets | Kept on | All machines | One vault every machine's agents and voice calls use; follows Serve from unless picked |
 | Machines | When new tasks wait (memory, CPU, disk), low priority, memory cap per worker | All machines, machine | About a machine's hardware, not a space's work |
 | Machines | Home Assistant | Machine only | One per machine |
+| Machines | Local artifact folder | This computer, desktop app | One storage folder for every local space |
 | Window | Tabs, sidebar, counts, filters, subagents, Assistant in new spaces | Everywhere only | How the screen looks; the last is about spaces not made yet |
 | Window | Add-ons | Everywhere only | Which mods run: the window's, for every space |
 | Web | Serve from, link | Everywhere only | One web app for every machine |
@@ -49,6 +50,13 @@ drops the space's own, and it inherits again. A few settings are one for every s
 repos" without a third layer, and one less layer keeps "where does this value come from" one line long. What a machine
 genuinely differs in (its hardware, its home space, a key only it has) is already on Machines and Secrets. Agent and
 task values a machine set before (the old machine scope) still apply there until Reset, and say so on Machines.
+
+## Local artifact folder
+
+In the desktop app, open **Settings → Machines → This computer → Local artifact folder**. The current folder is shown.
+Click **Choose folder…**, select a destination, then **Move artifacts**. Cancel leaves the current location unchanged.
+The existing artifact command preserves artifacts, keeps the previous files, and refuses conflicting destination files.
+This changes storage on this computer only; other machines keep their own folders.
 
 ## Where they're kept, and how they travel
 

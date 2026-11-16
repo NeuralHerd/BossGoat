@@ -36,6 +36,7 @@ import { spaceName } from "./core/spaces.js";
 import { NOTIFY, NOTIFY_DEFAULT, notifyMachine, notifyMachineOwn, notifyOf, notifyOwn, notifyEverywhere,
   setNotifyEverywhere, setNotifyMachine, setNotify } from "./notify.js";
 import { machinesSection } from "./machines-section.js";
+import { artifactLocationInit } from "./artifact-location.js";
 import { TEXT, RADIUS, H, button, link, toggleSwitch, segmented, menuRow } from "./ui.js";
 import { webSection } from "./web-section.js";
 import { UPDATES, updatesInit, updatesSection, runUpdate } from "./updates-section.js";
@@ -111,6 +112,7 @@ export default class ShepherdrSettings extends View {
     // Autopilot: one setting for every space, kept by herdr-task (autopilot-section.js).
     this.ap = autopilotInit(this, cx);
     this.appearance = appearanceInit();
+    this.artifactLocation = artifactLocationInit(cx);
     this.updates = updatesInit();
     runUpdate(this, "status", cx);
     // The add-ons Window's switches offer (lib/addons.json, layout.js).
