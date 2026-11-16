@@ -96,10 +96,15 @@ true`;
 //                                     last whole line), going back in growing chunks:
 //                                     "P <start> <end>" (start 0: the very start)
 //   log results <file> <offset>...    the first 64 KB of the lines at those offsets
+const CURSOR_TURN_END = '{"type":"turn_ended","status":"success"}';
 export const LOG = String.raw`
 mode="$1"; f="$2"
 [ -f "$f" ] || { echo "missing"; exit 0; }
 s=$(wc -c < "$f" | tr -d ' ')
+# Cursor replaces this trailing marker when the next prompt arrives.
+if [ "$s" -ge ${CURSOR_TURN_END.length + 1} ] && [ "$(tail -c +$((s - ${CURSOR_TURN_END.length})) "$f" | head -c ${CURSOR_TURN_END.length + 1})" = '${CURSOR_TURN_END}' ]; then
+  s=$((s - ${CURSOR_TURN_END.length + 1}))
+fi
 X='
 BEGIN { pos = base; first = base; msgs = 0 }
 {
@@ -220,7 +225,13 @@ const time = (s) => Date.parse(s ?? "") || 0;
 
 // Cursor has minute-precision times (or none). Only newly appended records can acknowledge a send.
 export function afterSend(message, sent) {
-  if (message.cursorOffset != null && sent.cursorAfter != null) return message.cursorOffset >= sent.cursorAfter;
+  if (message.cursorOffset != null && sent.cursorAfter != null) {
+    if (message.cursorOffset >= sent.cursorAfter) return true;
+    // Older saved drafts counted the marker that Cursor overwrites. Its minute timestamp
+    // must still belong to this send; earlier turns and prior IDs cannot confirm it.
+    return message.cursorOffset + CURSOR_TURN_END.length + 1 === sent.cursorAfter
+      && message.at > 0 && message.at >= Math.floor(sent.at / 60000) * 60000;
+  }
   return (message.at ?? 0) >= sent.at - 5000;
 }
 
@@ -415,15 +426,17 @@ function cleanWords(t) {
 
 function cursorMessage(l) {
   let timestamp = l.timestamp;
+  const paths = [];
   const raw = typeof l.message?.content === "string" ? [{ type: "text", text: l.message.content }] : Array.isArray(l.message?.content) ? l.message.content : [];
   const content = raw.map((b) => {
     if (l.role !== "user" || b.type !== "text") return b;
-    const envelope = /^\s*<timestamp>([^<]*)<\/timestamp>\s*<user_query>([\s\S]*)<\/user_query>\s*$/.exec(b.text);
+    const envelope = /^\s*(?:(?:\[Image(?: #\d+)?\]\s*)*<image_files>([\s\S]*?)<\/image_files>\s*)?<timestamp>([^<]*)<\/timestamp>\s*<user_query>([\s\S]*)<\/user_query>\s*$/.exec(b.text);
     if (!envelope) return b;
-    timestamp ??= envelope[1].replace(/\(UTC([+-])(\d{1,2}):(\d{2})\)/, (_, sign, h, m) => `GMT${sign}${h.padStart(2, "0")}${m}`);
-    return { ...b, text: envelope[2].trim() };
+    paths.push(...[...(envelope[1] ?? "").matchAll(/^\d+\.\s+(\/[^\r\n]+)$/gm)].map((m) => m[1].trim()));
+    timestamp ??= envelope[2].replace(/\(UTC([+-])(\d{1,2}):(\d{2})\)/, (_, sign, h, m) => `GMT${sign}${h.padStart(2, "0")}${m}`);
+    return { ...b, text: envelope[3].trim() };
   });
-  return { ...l, timestamp, message: { ...l.message, content } };
+  return { ...l, timestamp, cursorPaths: paths, message: { ...l.message, content } };
 }
 
 function claudeUser(c) {
@@ -786,7 +799,7 @@ export class Conversation {
       replyTo = u.quoted;
       text = u.rest;
     }
-    this.push({ kind: "user", id, text, replyTo, from: u.from, ...(u.assistant ? { assistant: u.assistant } : {}), at: u.at, images: u.images || 0, ...(u.cursorOffset != null ? { cursorOffset: u.cursorOffset } : {}) });
+    this.push({ kind: "user", id, text, replyTo, from: u.from, ...(u.assistant ? { assistant: u.assistant } : {}), at: u.at, images: u.images || 0, ...(u.paths?.length ? { paths: u.paths } : {}), ...(u.cursorOffset != null ? { cursorOffset: u.cursorOffset } : {}) });
     this.doing = null;
   }
 
@@ -1001,7 +1014,7 @@ export class Conversation {
       if (Array.isArray(l.message?.content) && l.message.content.some((b) => b?.type === "tool_result")) { this.answers(l, off); return; }
       if (l.origin?.kind && l.origin.kind !== "human") return;
       const u = claudeUser(l.message?.content);
-      if (u) this.user(`u${off}`, { ...u, at: time(l.timestamp), ...(this.kind === "cursor" ? { cursorOffset: off } : {}) });
+      if (u) this.user(`u${off}`, { ...u, at: time(l.timestamp), ...(this.kind === "cursor" ? { cursorOffset: off, ...(l.cursorPaths?.length ? { paths: l.cursorPaths, images: l.cursorPaths.length } : {}) } : {}) });
     } else if (l.type === "attachment" && l.attachment?.type === "queued_command") {
       // A message typed while the agent was busy, taken in mid-turn.
       const a = l.attachment;

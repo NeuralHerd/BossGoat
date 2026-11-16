@@ -9,9 +9,9 @@ export function receipt(items, pending) {
   return (items ?? []).find((m) => {
     if (!(m.kind === "user" || m.who === "you") || m.waiting || prior.has(m.id)) return false;
     if (pending.cid && m.cid === pending.cid) return true;
-    if (!expected || !Number.isFinite(pending.at) || !afterSend(m, pending)) return false;
+    if ((!expected && !body) || !Number.isFinite(pending.at) || !afterSend(m, pending)) return false;
     const text = norm(m.text);
-    return text === expected || (body && text === body) || (pending.first && text.endsWith(expected));
+    return (expected && text === expected) || (body && text === body) || (pending.first && expected && text.endsWith(expected));
   }) ?? null;
 }
 export function restorePending(pending = []) {

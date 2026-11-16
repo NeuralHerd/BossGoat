@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { restorePending, receipt } from "./delivery.js";
+import { Conversation } from "./chat-log.js";
 
 const source = readFileSync(new URL("../mods/chat/main.js", import.meta.url), "utf8");
 const method = (name) => source.match(new RegExp(String.raw`\n  (?:async )?${name}\([^\n]*\) \{\n[\s\S]*?\n  \}`))[0];
@@ -80,5 +81,38 @@ test("a first conversation with no saved draft can save immediately", async () =
     await self.loadDraft({ notify() {} });
     await self.saveDraft(true);
     expect(JSON.parse(await fs.readFile(self.draftFile, "utf8")).pending).toEqual([]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test("reopening Cursor chat removes confirmed text and image drafts without resending", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "desktop-cursor-reopen-"));
+  try {
+    const original = Object.assign(state(dir), make(dir));
+    const at = Date.parse("2026-11-11T13:49:55Z"), stamp = "Wednesday, Nov 11, 2026, 7:19 PM (UTC+5:30)";
+    original.pending = [
+      { id: "text", text: "Continue", sent: "Continue", cursorAfter: 141, at, attempted: true, msg: { text: "Continue", files: [] } },
+      { id: "image", text: "Explain this", sent: "Explain this\n\n/saved/pasted.png", cursorAfter: 541, at, attempted: true, msg: { text: "Explain this", files: [{ path: "/saved/pasted.png", image: true }] } },
+    ];
+    await original.saveDraft(true);
+    const reopened = Object.assign(state(dir), make(dir));
+    await reopened.loadDraft({ notify() {} });
+    reopened.conv = new Conversation("cursor");
+    reopened.conv.feed(original.pending.map((p, i) => ({ kind: "J", off: i ? 500 : 100, data: JSON.stringify({ role: "user", message: { content: [{ type: "text", text:
+      `${i ? "[Image]\n<image_files>\n1. /saved/asset.jpg\n</image_files>\n" : ""}<timestamp>${stamp}</timestamp>\n<user_query>${p.sent}</user_query>` }] } }) })));
+    let sent = 0;
+    reopened.deliver = () => sent++;
+    const save = reopened.saveDraft.bind(reopened);
+    let saved;
+    reopened.saveDraft = () => (saved = save());
+    reopened.settlePending();
+    await saved;
+    expect(sent).toBe(0);
+    expect(reopened.pending).toHaveLength(0);
+    expect(reopened.conv.items.filter((m) => m.kind === "user")).toHaveLength(2);
+    expect(reopened.conv.items[1].paths).toEqual(["/saved/asset.jpg"]);
+    const again = Object.assign(state(dir), make(dir));
+    await again.loadDraft({ notify() {} });
+    expect(again.pending).toHaveLength(0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -222,3 +222,59 @@ test("a Cursor chat recovers from missing-log state while its first transcript i
   expect(self.phase).toBe("ready");
   expect(self.conv.kind).toBe("cursor");
 });
+
+
+test("Cursor tailing survives replacement of the previous turn's completion marker", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cursor-rewrite-"));
+  try {
+    const file = join(dir, "log.jsonl"), end = '{"type":"turn_ended","status":"success"}\n';
+    const old = cursorUser(`<timestamp>${stamp}</timestamp>\n<user_query>Continue 🌞</user_query>`).data + "\n";
+    const read = async (mode, offset) => {
+      const p = Bun.spawn(["sh", "-c", LOG, "log", mode, file, String(offset), "30"], { stdout: "pipe" });
+      const r = records(await new Response(p.stdout).text());
+      expect(await p.exited).toBe(0);
+      return r;
+    };
+    writeFileSync(file, old + end);
+    const first = await read("page", 999999999999999);
+    const boundary = Number(first.head[2]);
+    expect(boundary).toBe(Buffer.byteLength(old));
+    const c = new Conversation("cursor"); c.feed(first.records);
+    const pending = { text: "Continue 🌞", at: Date.parse("2026-11-11T13:49:55Z"), cursorAfter: boundary, prior: c.items.map((m) => m.id) };
+    expect(receipt(c.items, pending)).toBeNull();
+    expect((await read("tail", boundary)).records).toHaveLength(0);
+    writeFileSync(file, old + '{"role":"user"');
+    const partial = await read("tail", boundary);
+    expect(partial.records).toHaveLength(0);
+    expect(Number(partial.head[3])).toBe(boundary);
+    writeFileSync(file, old + cursorUser(`<timestamp>${stamp}</timestamp>\n<user_query>Continue 🌞</user_query>`).data + "\n" + end);
+    const next = await read("tail", boundary); c.feed(next.records);
+    expect(c.items.filter((m) => m.kind === "user")).toHaveLength(2);
+    expect(receipt(c.items, pending)?.cursorOffset).toBe(boundary);
+    expect(Number(next.head[3])).toBe(Buffer.byteLength(readFileSync(file)) - Buffer.byteLength(end));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("Cursor receipts recover saved boundaries that included the replaced completion marker", () => {
+  const c = new Conversation("cursor"), at = Date.parse("2026-11-11T13:49:55Z");
+  c.feed([cursorUser(`<timestamp>${stamp}</timestamp>\n<user_query>Continue</user_query>`, 100)]);
+  const pending = { text: "Continue", at, cursorAfter: 141 };
+  expect(receipt(c.items, pending)?.id).toBe("u100");
+  expect(receipt(c.items, { ...pending, prior: ["u100"] })).toBeNull();
+  expect(receipt(c.items, { ...pending, at: at + 60000 })).toBeNull();
+  expect(receipt(c.items, { ...pending, cursorAfter: 142 })).toBeNull();
+});
+
+test("Cursor image envelopes confirm the full sent message and keep previews after confirmation", () => {
+  const c = new Conversation("cursor"), at = Date.parse("2026-11-11T13:49:55Z");
+  const wrapper = (text) => `[Image]\n<image_files>\nThe following images were provided by the user and saved to disk for future use:\n1. /saved/asset.jpg\n\nThese files can be read with tools.\n</image_files>\n<timestamp>${stamp}</timestamp>\n<user_query>${text}</user_query>`;
+  const sent = "Explain this\n\n/saved/pasted.png";
+  c.feed([cursorUser(wrapper(sent), 100)]);
+  expect(c.items[0]).toMatchObject({ text: sent, paths: ["/saved/asset.jpg"], images: 1, at: Date.parse("2026-11-11T13:49:00Z") });
+  expect(receipt(c.items, { text: "Explain this", sent, at, cursorAfter: 100 })?.id).toBe("u100");
+  c.feed([cursorUser(wrapper("/saved/pasted.png"), 500)]);
+  expect(receipt(c.items, { text: "", sent: "/saved/pasted.png", at, cursorAfter: 500 })?.id).toBe("u500");
+  expect(receipt(c.items, { text: "", sent: "/saved/different.png", at, cursorAfter: 500 })).toBeNull();
+  expect(receipt(c.items, { text: "", at, cursorAfter: 500 })).toBeNull();
+  expect(receipt([{ kind: "user", id: "other-image", text: "", images: 1, at }], { text: "", sent: "/saved/pasted.png", at })).toBeNull();
+});
