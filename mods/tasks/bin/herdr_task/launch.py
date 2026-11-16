@@ -16,8 +16,8 @@ import sys
 import time
 
 from .base import ASK_HOME, ENTRY, Fail, git, hc_json, now, run, WORKTREES
-from .settings import agent_key, inherit_permission, ASSISTANT_TEMPLATES, trust_roots, bare, BRANCH_PATTERN, branch_pattern_problem, keep_review, notes, notes_part, review_limits, settings_block, settings_for
-from .templates import instructions
+from .settings import agent_key, inherit_permission, ASSISTANT_TEMPLATES, trust_roots, bare, BRANCH_PATTERN, branch_pattern_problem, keep_review, notes, notes_part, review_limits, settings_block, settings_for, task_settings
+from .templates import instructions, worker_sections
 from .holycow import skill_note, require_assignment
 from .agents import detail, LINE_MAX, live_agents, SUMMARY_MAX
 from .github import finish, remote_of
@@ -456,44 +456,45 @@ def retag_tabs(s):
 def closing_line(s, task, parent=None, argv=None):
     """How the worker finishes: every task, worktree or in the folder, says ready with a summary.
     It names this herdr-task by its full path: only that form runs without asking (own_argv)."""
-    done = "finished and committed" if task.get("mode") == "worktree" and task.get("skill") != "hc-review" else "finished"
-    ht = own_path()
-    text = (f"When the work is {done}, run `{ht} ready {s.ref(task)} --folder {shlex.quote(s.loc['folder'])} "
-            f"--summary \"<what the person now sees or can do, plain words, at most {SUMMARY_MAX} characters>\"` (optionally "
-            f"`--details \"<a few short bullets in plain words, one per line: what changed for the person first, then how it was checked>\"`; with `--agents-md \"<one line>\"` when you learned something "
-            f"about setting up or testing this repo that its AGENTS.md lacks). The person accepts it from there; never mark it done yourself.")
+    ht, folder, ref = own_path(), shlex.quote(s.loc['folder']), s.ref(task)
+    text = (f"Task commands (use the full path each time as one plain command):\n"
+            f"- Ready: `{ht} ready {ref} --folder {folder} --summary \"<plain summary, at most {SUMMARY_MAX} characters>\"`; "
+            f"optional `--details \"<short bullets>\"`, `--agents-md \"<setup/test note>\"`. "
+            f"The person accepts it; never mark it done yourself.\n"
+            f"- Status: `{ht} status {ref} --folder {folder} \"<what you're doing, at most {LINE_MAX} characters>\" "
+            f"--done <percent> --left <time, e.g. 20m>`.\n")
     on, rounds = review_limits(s, task)
     if on:
-        text += (f" Review is on: after each review round, record it on the commit it reviewed with `{ht} reviewed {s.ref(task)} "
-                 f"--folder {shlex.quote(s.loc['folder'])} --report \"<its findings in a line>\"` (add `--commit <sha>` if you committed fixes since; at most {rounds} rounds); "
-                 f"ready refuses a final commit no round was recorded on.")
-    text += (f" At the start, at each natural step and at least every 5 minutes while you work, say how it's going: `{ht} status {s.ref(task)} --folder {shlex.quote(s.loc['folder'])} "
-             f"\"<what you're doing now, at most {LINE_MAX} characters>\" --done <% of the whole task> --left <your best guess of how long is left, like 20m>`: "
-             f"always give `--left`, from your very first status on, and revise it honestly each time from how the work is really going; "
-             f"a rough guess beats none.")
-    text += (f" Only for what truly can't wait, `{ht} alert \"<what, a few words>\" --body \"<why>\"` reaches the person at once "
-             f"(a toast and a sound); a question waits in your chat instead.")
+        text += (f"- Reviewed: `{ht} reviewed {ref} --folder {folder} --report \"<findings>\"`; "
+                 f"add `--commit <sha>` if fixes changed HEAD. At most {rounds} rounds; ready requires the final commit reviewed.\n")
+    text += f"- Urgent alert only: `{ht} alert \"<what>\" --body \"<why>\"`; questions belong in chat.\n"
     from .feedback import feedback_on
     if feedback_on(task.get("space")):
-        text += (f" A problem in Shepherdr itself, not this task's code: `{ht} feedback \"<one line>\" --details \"<goal, what was "
-                 f"tried, what went wrong, expected, suggested fix>\"` returns at once and your Assistant offers the person to file "
-                 f"it; carry on.")
-    text += (f" Your herdr-task command is {ht}: write that full path each time (never the bare name), as one plain command; "
-             f"then its {', '.join(OWN)} commands run without asking.")
+        text += f"- Feedback: `{ht} feedback \"<problem>\" --details \"<goal, repro, expected, suggested fix>\"`.\n"
     if argv and agent_key(argv) == "cursor":
-        text = text.replace("then its " + ", ".join(OWN) + " commands run without asking.",
-                            "Cursor applies the selected permission mode to these commands too.")
+        text += "Cursor applies the selected permission mode to these commands."
+    else:
+        text += f"The {', '.join(OWN)} commands run without asking when written this way."
     text += browser_line()
-    if secret_path():
-        text += (" Secrets (keys, tokens, passwords) are used by name, never seen: `herdr-secret ask NAME --why \"…\"` "
-                 "(then end your turn), `herdr-secret run NAME -- <command>`, `herdr-secret list`; these run without asking too.")
     if argv and agent_key(argv) == "codex":
         text += (" Codex's sandbox can't reach Herdr nor write git's data, so give those commands, herdr-artifact's (your proof), "
                  "`git add`/`git commit` and your review's `hc run`/`hc wait`/`hc read`/`hc kill` (its prompt in single quotes) "
                  "sandbox_permissions \"require_escalated\" from the first try, each as one plain command (no && chains, no $(…), "
                  "no git options before the verb): then they run without asking.")
-    # No "report to your coordinator": Herdr tells the Assistant itself (news_pass).
     return text
+
+
+def worker_instructions(s, task, space=None, argv=None):
+    from .feedback import feedback_on
+    rows = {r["label"]: r["value"] for r in task_settings(s, task, space, argv)}
+    folder = task.get("worktree") or s.loc["folder"]
+    active = {key for key, on in {
+        "review": rows["Review"], "proof": rows["Proof"],
+        "suggestions": rows["Suggested next message"], "browser": bool(browser_path()),
+        "feedback": feedback_on(space or task.get("space")),
+        "bossgoat": all(os.path.isfile(os.path.join(folder, p)) for p in ("lib/COPIES", "bin/sync-shared")),
+    }.items() if on}
+    return worker_sections(instructions("worker"), active)
 
 
 def where_line(task):
@@ -526,12 +527,12 @@ def brief(s, task, parent=None, space=None, argv=None):
         start += f"\n(The main folder is {s.loc['folder']}.)"
     body = "Your task, " + s.ref(task) + ":\n" + ((task.get("prompt") or "").strip() or task["title"])
     finish = notes_part("Before you say ready", notes(s, task, "finish", space))
-    return "\n\n".join(x for x in [instructions("worker"), holycow_brief(s, task, space, argv), start, body, where_line(task), finish, closing_line(s, task, parent, argv),
+    return "\n\n".join(x for x in [worker_instructions(s, task, space, argv), holycow_brief(s, task, space, argv), start, body, where_line(task), finish, closing_line(s, task, parent, argv),
                                     settings_block(s, task, space, argv)] if x)
 
 
 def handoff(s, task, prev, parent=None, argv=None):
-    lines = [f"You are taking over task {s.ref(task)} \"{task['title']}\" from another agent.", instructions("worker")]
+    lines = [f"You are taking over task {s.ref(task)} \"{task['title']}\" from another agent.", worker_instructions(s, task, argv=argv)]
     lines.append(holycow_brief(s, task, argv=argv))
     lines.append(where_line(task))
     lines.append("The task:\n" + ((task.get("prompt") or "").strip() or task["title"]))

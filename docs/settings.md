@@ -89,6 +89,19 @@ This changes storage on this computer only; other machines keep their own folder
   `everywhere`) and its heartbeat file (`~/.config/herdr-core/autopilot/everywhere.md`) are what Everywhere inherits
   until it's set.
 
+## Task briefs
+
+New tasks and handoffs receive a compact worker brief. The task's effective settings select review,
+proof, feedback and suggestion sections; task-browser guidance appears only when that add-on is available.
+BossGoat development guidance appears only in folders containing `lib/COPIES` and `bin/sync-shared`.
+The task, personal instructions, required checks, status updates and permission boundaries remain in the brief.
+Running conversations retain the brief they already received.
+
+In `worker.md`, `<!-- bossgoat:review -->` through `<!-- /bossgoat:review -->` (and the corresponding
+`proof`, `browser`, `bossgoat`, `feedback` and `suggestions` markers) delimit optional sections. Put personal
+rules outside these markers so they are always included. Unedited older defaults upgrade automatically;
+customized templates are preserved and the installer offers the new default as `worker.md.new`.
+
 ## Reactions
 
 Agents › Reactions, on by default: every agent reacts to some of your messages with one emoji, as a person would:

@@ -111,7 +111,47 @@ OFTEN_RULE = "- Say how it's going: at the start, at each natural step and at le
 HONEST_OLD = "from your very first status on, and update it at every step as you learn more. A rough guess beats none."
 HONEST_RULE = ("from your very first status on. Each time, revise it honestly from how the work is really going (slower than "
                "you thought: say more), never just count it down. A rough guess beats none.")
-WORKER_MD = WORKER_MD_BEFORE_OFTEN.replace(OFTEN_OLD, OFTEN_RULE).replace(HONEST_OLD, HONEST_RULE)
+WORKER_MD_BEFORE_COMPACT = WORKER_MD_BEFORE_OFTEN.replace(OFTEN_OLD, OFTEN_RULE).replace(HONEST_OLD, HONEST_RULE)
+
+WORKER_MD = """You work on one Herdr task. Stay within the task's scope and folder.
+- Follow the task, repository instructions and personal workflow. The Settings block gives defaults and their source; explicit task instructions take precedence. Preserve unrelated edits and accepted decisions.
+- Commit as you go. Don't merge, push, rebase shared branches, deploy or start helpers unless authorized; the configured reviewer is allowed when Review is on. Ready is not acceptance.
+- Say how it's going: at the start, each natural step and at least every 5 minutes while you work, run the status command below. Use at most 40 characters, `--done` for overall progress and `--left` from the first update; revise it honestly, never just count down. A rough guess beats none.
+- Before asking for a decision, set status to the blocker. Use your CLI's question tool (2–4 clear choices, recommendation first); otherwise ask one complete question naming what you need and why. Wait for the answer. Keep working while waiting on CI or another machine when no human decision is needed.
+- Run required project checks. For bugs, demonstrate the same repro failing before and passing after. Check UI changes in the real app using the person's preferred browser; mocks don't prove visible behavior. Use screenshots for visible changes. Disclose what wasn't verified. Never fabricate evidence.
+- Secrets stay unread and out of chats, logs, artifacts and commits. Request by name with `herdr-secret ask NAME --why "…"`, then end your turn; `herdr-secret list` lists names. Use `herdr-secret run NAME[,NAME] -- <command>`. Only when a tool requires a file, use `herdr-secret env NAME --file .env` in a repo ignoring it; never open it, remove with `rm`. Don't repeat pasted values; request the masked box.
+- Finish with the ready command below: summary at most 160 characters, plain words about what the person can now do, no filenames, flags, numbers or jargon. Put checks and useful details in short `--details` bullets. Never mark done yourself or merge without authorization. Suggest missing setup/test knowledge via `--agents-md "<one line>"`; the Assistant decides whether to add it.
+- After ready, fix failures caused by your change and clear requests within scope, then run ready again. Report unrelated failures; ask about ambiguous or expanded requests.
+- Mentions: `space:<route/space>` identifies an Assistant; use `herdr-task tell-assistant <route/space> "…"` when asked to send it something. `task:<route/id>?folder=<path>` identifies a task; inspect with `herdr-task --on <route> show <id> --folder <path>` (omit route for this machine, folder for this space).
+
+<!-- bossgoat:review -->
+Review (only when Review is on):
+- Commit, then launch an independent read-only reviewer with `hc run --bg --name <task>-review --label "herdr.task=$HERDR_BROWSER_TASK" --label herdr.role=reviewer --label herdr.agent=<cli> -- <command> "<prompt>"`. Use the command exactly as the Reviewer line gives it: `codex --no-daemon --sandbox read-only`, `claude --permission-mode plan` or `cursor-agent --mode ask`, including its model and effort. Never use headless `codex exec`, `claude -p` or `cursor-agent -p`.
+- Give it the task contract, actual diff against base, checks/evidence and ~/.config/herdr-core/templates/reviewer.md. Wait with `hc wait <its name> --timeout 600`; repeat on timeout or turn 0. Read with `hc read <its name> --lines 400`, then `hc kill <its name>`. Other authorized helpers use herdr.role=helper.
+- Findings need evidence and severity: blocker (unsafe or breaks work), major (likely failure), minor (rare/style). Fix findings at or above Must fix; commit and review again within Review rounds. Explain rejected and lower-severity findings. Record each round with reviewed on its exact commit. Never call ready with blocking findings or an unreviewed final commit; if rounds run out, set status, explain and ask the Assistant for another round.
+<!-- /bossgoat:review -->
+
+<!-- bossgoat:proof -->
+Proof (when requested): publish one recipe artifact titled "<task title> · Proof" using `herdr-artifact guide`, never a custom panel. Include a short change description, real evidence with captions and a "Not proven" list. Keep evidence files out of commits; add `--proof <id>` to ready. A change too small to show gets a chat explanation. Preview published artifacts with `herdr-artifact preview <id>` at phone and desktop widths; fix defects. Show relevant images/clips inline in chat using Markdown file links; keep the artifact updated with `herdr-artifact update`.
+<!-- /bossgoat:proof -->
+
+<!-- bossgoat:browser -->
+Task browser (only when enabled and consistent with personal preferences): use the browser command below for pages, `snapshot -i`, ref-based clicks and screenshots. Respect human takeover; wait if actions are refused. Ask the person to handle passwords or sign-in you cannot complete.
+<!-- /bossgoat:browser -->
+
+<!-- bossgoat:bossgoat -->
+For BossGoat development: edit shared sources in lib/ or core/, never mod copies; run `bin/sync-shared` and `bin/sync-shared --check`. Installed mods hot-reload on every save: batch changes and use appropriate `herdr-app check`s, avoiding repeated reloads.
+<!-- /bossgoat:bossgoat -->
+
+<!-- bossgoat:feedback -->
+- For a BossGoat bug outside this task, use the feedback command below once per problem and continue. The Assistant offers to file it; never file an issue yourself or include secrets, private paths or whole logs.
+<!-- /bossgoat:feedback -->
+
+<!-- bossgoat:suggestions -->
+Suggested next message (only when on): end a suitable reply with `<hc suggest="…"/>`, under 60 characters in the person's words. Omit for question cards, notices or no sensible next message; never suggest when off.
+<!-- /bossgoat:suggestions -->
+"""
+FEEDBACK_RULE = '- For a BossGoat bug outside this task, use the feedback command below once per problem and continue. The Assistant offers to file it; never file an issue yourself or include secrets, private paths or whole logs.\n'
 
 REVIEWER_MD_BEFORE_SUBAGENT = """You review one Herdr task's work before it can merge. Read only: never edit files, commit or push.
 - Read the task, then the diff of its branch against its base, and run the project's checks.
@@ -144,7 +184,7 @@ OLD_WORKER_READY = """You work on one Herdr task. Stay within the task's scope a
 - When the work is finished, run the `herdr-task ready` command given at the end of your brief, with a short summary. That puts the task in Ready for the person, who accepts it. Never mark a task done yourself.
 """
 OLD_WORKER_MD = OLD_WORKER_READY.split("- When the work is finished")[0]
-OLD_WORKERS = (WORKER_MD_BEFORE_OFTEN, WORKER_MD_WITH_CURSOR, WORKER_MD_BEFORE_CURSOR, WORKER_MD_BEFORE_SUGGEST, WORKER_MD_BEFORE_COMMAND, WORKER_MD_BEFORE_FEEDBACK, WORKER_MD_BEFORE_SUBAGENTS, WORKER_MD_BEFORE_LEFT, WORKER_MD_BEFORE_DETAILS, WORKER_MD_BEFORE_CUT, WORKER_MD_BEFORE_ESTIMATE, WORKER_MD_BEFORE_SUMMARY, WORKER_MD_BEFORE_GATE, WORKER_MD_BEFORE_TEMPLATES, WORKER_MD_BEFORE_NEWS, OLD_WORKER_READY, OLD_WORKER_MD, OLD_WORKER_MD.replace(OLD_WORKER_MD.split("\n")[0], OLD_WORKER_FIRST), OLD_WORKER_REVIEW)
+OLD_WORKERS = (WORKER_MD_BEFORE_COMPACT, WORKER_MD_BEFORE_OFTEN, WORKER_MD_WITH_CURSOR, WORKER_MD_BEFORE_CURSOR, WORKER_MD_BEFORE_SUGGEST, WORKER_MD_BEFORE_COMMAND, WORKER_MD_BEFORE_FEEDBACK, WORKER_MD_BEFORE_SUBAGENTS, WORKER_MD_BEFORE_LEFT, WORKER_MD_BEFORE_DETAILS, WORKER_MD_BEFORE_CUT, WORKER_MD_BEFORE_ESTIMATE, WORKER_MD_BEFORE_SUMMARY, WORKER_MD_BEFORE_GATE, WORKER_MD_BEFORE_TEMPLATES, WORKER_MD_BEFORE_NEWS, OLD_WORKER_READY, OLD_WORKER_MD, OLD_WORKER_MD.replace(OLD_WORKER_MD.split("\n")[0], OLD_WORKER_FIRST), OLD_WORKER_REVIEW)
 
 
 TEMPLATE_HEADS = {
@@ -191,3 +231,9 @@ def instructions(role):
         except OSError:
             pass
     return body.strip()
+
+
+def worker_sections(text, enabled):
+    """Filter only managed sections; personal instructions outside them stay verbatim."""
+    pattern = r"<!-- bossgoat:(review|proof|browser|bossgoat|feedback|suggestions) -->\n(.*?)<!-- /bossgoat:\1 -->"
+    return re.sub(pattern, lambda m: m[2].strip() if m[1] in enabled else "", text, flags=re.S).strip()
