@@ -16,7 +16,7 @@ import * as AG from "../core/agents.js";
 import { hasAssistantContext } from "../core/assistant-context.js";
 import { layoutScript } from "./layout-scripts.ts";
 
-const { ScreenWatch, starting, cliOf, readScreen, screenText, pressKeys, SCREEN } = SC as any;
+const { ScreenWatch, watching, cliOf, readScreen, screenText, pressKeys, SCREEN } = SC as any;
 const { LOST, lostMessage, shellWord, WORDS, sessionStarted, sessionFailed } = CV as any;
 const { freshArgv } = AG as any;
 type Run = (args: string[]) => Promise<{ code: number; stdout: string; stderr?: string }>;
@@ -53,7 +53,7 @@ export class AgentWatch {
       for (const w of this.o.watched()) {
         const k: any = this.hub.terminals.get(w.addr);
         if (!k) continue;
-        if (starting(k) || this.screens.open(w.addr)) await this.screens.tick(w.addr, k).catch(() => undefined);
+        if (watching(k) || this.screens.open(w.addr)) await this.screens.tick(w.addr, k).catch(() => undefined);
         if (this.lostCandidate(k)) await this.checkLost(w).catch(() => undefined);
       }
     } finally { this.busy = false; }
@@ -64,6 +64,7 @@ export class AgentWatch {
     const addr = [...this.own.keys(), ...Object.keys(this.o.windowCards() ?? {})].find((a) => this.cardsOf(a).some((c) => c.id === id));
     const card = addr ? this.cardsOf(addr).find((c) => c.id === id) : null;
     if (!card || card.state !== "open") return SCREEN.gone;
+    if (card.runtime) return SCREEN.terminalOnly;
     if (!card.window) return this.screens.press(card, choice);
     const r = await this.hc(["read", card.addr]);
     const s = r.code === 0 ? readScreen(r.stdout, Infinity) : null;

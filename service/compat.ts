@@ -512,7 +512,7 @@ export class Compat {
 
   /** A CLI's start screen (core/screens.js card) as a card that presses a choice on a tap. */
   screenQuestion(c: any, key: string, by?: { ref: string; title: string; chat: string }): Question {
-    return { id: c.id, title: SCREEN.title(c.cli), kind: "Question", to: key, ...(c.words ? { screen: c.words } : {}), press: true,
+    return { id: c.id, title: SCREEN.title(c.cli), kind: "Question", to: key, ...(c.words ? { screen: c.runtime ? `${c.words}\n\n${SCREEN.terminalOnly}` : c.words } : {}), press: true, ...(c.runtime ? { terminal: true } : {}),
       choices: (c.choices ?? []).map((x: any) => ({ label: x.label, ...(x.description ? { description: x.description } : {}) })), ...(by ? { by } : {}) } as Question;
   }
 
@@ -665,7 +665,7 @@ export class Compat {
     const screens = (who: string, ref: string | null, by?: { ref: string; title: string; chat: string }) => {
       for (const c of watch?.cardsOf?.(who) ?? []) {
         if (c.state === "open") messages.push({ id: `card:${c.id}`, who: "agent", at: c.opened, question: this.screenQuestion(c, key, by) });
-        else messages.push(quiet(`se:${c.id}`, c.opened, `${ref ? `${ref} · ` : ""}${SCREEN.ended(c.cli, c.how)}`));
+        else messages.push(quiet(`se:${c.id}`, c.opened, `${ref ? `${ref} · ` : ""}${SCREEN.ended(c.cli, c.how, c.runtime)}`));
       }
     };
     if (addr) screens(addr, null);

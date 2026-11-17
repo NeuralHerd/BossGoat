@@ -5,7 +5,7 @@
 // No hook reports these, so the screen is read: two matching reads a poll apart put a card up, and one press on a
 // choice presses it in the terminal, only if the screen still shows what the card was drawn from. A screen with
 // nothing to choose makes no card (it may be a slow start), unless a card came before and this one holds a link (a
-// sign-in). An agent that reports a status (its session started) or took a turn never gets one.
+// sign-in). Running Cursor sessions are also watched for their native question dialog, which has no status hook.
 // A card: { id, addr, cli, words, choices: [{ label, description? }], at (the cursor's choice), all (screenText),
 // seen (sameScreen), state: "open" | "answered" | "closed", how, opened, changed }.
 
@@ -102,6 +102,21 @@ export function readScreen(text, width = Infinity) {
   return { words: withLinks(wordsAbove(lines, enter >= 0 ? enter : lines.length, MOST_WORDS), lines, width), choices: enter >= 0 ? [{ label: "Continue" }] : [], at: 0 };
 }
 
+// Cursor can wait here before AskQuestion reaches its transcript. Keep the checkbox dialog read-only:
+// Enter advances or skips; it does not select the highlighted answer like a startup menu does.
+export function cursorQuestion(text) {
+  const lines = cleaned(text);
+  const footer = lines.findLastIndex((line) => /↑\/↓ option/.test(line) && /Space select/.test(line)
+    && /Enter next\/submit/.test(line) && /Esc to skip/.test(line));
+  if (footer < 0 || lines.slice(footer + 1).some((line) => /[\p{L}\p{N}]/u.test(line))) return null;
+  const top = lines.slice(0, footer).findLastIndex((line) => /^\s*[┌╭]─+[┐╮]?\s*$/.test(line));
+  if (top < 0) return null;
+  const dialog = lines.slice(top + 1, footer);
+  if (!dialog.some((line) => /^\s*Question \d+ of \d+\s*$/.test(line))
+    || !dialog.some((line) => /^\s*[❯›▶►➤→>]\s+\[[ xX✓]\]\s+\S/u.test(line))) return null;
+  return { words: dialog.map((line) => line.trim()).join("\n").trim(), choices: [], at: 0, runtime: true };
+}
+
 // Letters only, so a screen with a timer on it still settles enough to show.
 export const sameScreen = (text) => cleaned(text).join(" ").replace(/[^\p{L}]+/gu, " ").trim();
 // The screen as it is, all but what moves with no one touching the words: the menu's cursor and a spinner's frame. A
@@ -148,6 +163,10 @@ export function starting(k) {
   return Boolean(k) && k.state === "live" && !st && !(k.turn > 0) && Boolean(cliOf(k));
 }
 
+export function watching(k) {
+  return starting(k) || (k?.state === "live" && cliOf(k) === "cursor");
+}
+
 // The words a start screen's card says: its title, how a press went, how it closed.
 export const SCREEN = {
   title: (cli) => `${cli} is waiting on its screen`,
@@ -156,14 +175,15 @@ export const SCREEN = {
   stopped: "The agent stopped",
   changed: "The screen changed",
   gone: "This screen is no longer waiting.",
+  terminalOnly: "Answer this question in Terminal. Use Space to select, then Enter to submit.",
   changedNothing: "That screen has changed, so nothing was pressed.",
   failed: "It didn't go through.",
-  ended: (cli, how) => `${cli}'s start screen · ${how}`,
+  ended: (cli, how, runtime = false) => `${cli}'s ${runtime ? "question" : "start screen"} · ${how}`,
 };
 
 // Watches agents' screens: one per chat copy (the window's) or one for the web app (the service's). io: { hc(args)
 // -> { code, stdout }, cards(addr) -> [card], save(addr, list) }. tick(addr, k) every couple of seconds while the agent
-// is starting; it says (through onPost) when it put a new card up, for the alert.
+// is starting or can show a native question; it says (through onPost) when it put a new card up, for the alert.
 export class ScreenWatch {
   constructor(io, onPost) {
     this.io = io;
@@ -181,7 +201,7 @@ export class ScreenWatch {
   // k: the terminal as hc get has it (created_ms, cols) or the live list's entry.
   async tick(addr, k, now = Date.now()) {
     const was = this.open(addr);
-    if (!starting(k)) {
+    if (!watching(k)) {
       this.last.delete(addr);
       // Its session started (it reports, or took a turn), or it ended: the card's wait is over.
       if (was) this.close(was, k?.state === "live" ? SCREEN.inTerminal : SCREEN.stopped);
@@ -196,7 +216,14 @@ export class ScreenWatch {
       const r = await this.io.hc(["read", addr]);
       if (r.code !== 0) return;
       const text = r.stdout ?? "";
-      const seen = sameScreen(text), all = screenText(text), { words, choices, at } = readScreen(text, k.cols ?? Infinity);
+      const question = cliOf(k) === "cursor" ? cursorQuestion(text) : null;
+      if (!question && !starting(k)) {
+        this.last.delete(addr);
+        if (was) this.close(was, SCREEN.changed);
+        return;
+      }
+      const seen = sameScreen(text), all = screenText(text), { words, choices, at } = question ?? readScreen(text, k.cols ?? Infinity);
+      const runtime = Boolean(question);
       const shown = JSON.stringify([all, choices]);
       const before = this.last.get(addr);
       this.last.set(addr, { seen, shown });
@@ -205,11 +232,11 @@ export class ScreenWatch {
       const open = last?.state === "open" && last.seen === seen ? last : null;
       // The same screen with a new code or number on it: a new card, so a press on the old one can't reach words it
       // didn't show.
-      if (open && before.shown === shown && JSON.stringify([open.all, open.choices]) !== shown) { this.close(open, SCREEN.changed); this.post(addr, k, { seen, all, words, choices, at }); return; }
+      if (open && before.shown === shown && JSON.stringify([open.all, open.choices]) !== shown) { this.close(open, SCREEN.changed); this.post(addr, k, { seen, all, words, choices, at, runtime }); return; }
       if (open || cards.some((c) => c.seen === seen && now - (c.changed ?? c.opened) < RETRY)) return;
       if (last?.state === "open") this.close(last, SCREEN.inTerminal);
-      if (!choices.length && !(words && cards.length && /https?:\/\//.test(text))) return;
-      this.post(addr, k, { seen, all, words, choices, at });
+      if (!runtime && !choices.length && !(words && cards.length && /https?:\/\//.test(text))) return;
+      this.post(addr, k, { seen, all, words, choices, at, runtime });
     } finally {
       this.looking.delete(addr);
     }
@@ -224,6 +251,7 @@ export class ScreenWatch {
   // A press on a choice: only on the screen the card was drawn from. Resolves with an error's words, or null once
   // pressed.
   async press(card, choice) {
+    if (card.runtime) return SCREEN.terminalOnly;
     if (this.pressing.has(card.addr)) return null;
     const now = this.open(card.addr);
     if (!now || now.id !== card.id) return SCREEN.gone;

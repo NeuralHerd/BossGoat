@@ -25,7 +25,8 @@ export function chatAgents() {
     const p = pane && chats.get(pane);
     if (!p || k.state !== "live" || own.has(k.address)) continue;
     const e = { terminal: k.address };
-    let status = STATES.includes(k.status) ? k.status : "idle";
+    let status = (shared("chat.screens") ?? {})[k.address]?.at(-1)?.state === "open"
+      ? "blocked" : STATES.includes(k.status) ? k.status : "idle";
     // Done means finished while nobody looked; looking at its chat makes it idle, as Herdr does.
     if (status === "done" && (now === pane || (seen[e.terminal] ?? -1) >= (k.turn ?? 0))) status = "idle";
     const w = where.get(p.tab);

@@ -68,7 +68,7 @@ const DICT_SLOW = 5000;
 import { PanelHost, inner, openTaskThread, backToTasks, requestWorkerTerminal, THREAD, STACK as TASKS_STACK, BODY as THREAD_BODY, CHAT as THREAD_CHAT, TERM as THREAD_TERM, PR as THREAD_PR, BROWSER as THREAD_BROWSER } from "./panel.js";
 import { markRead, onScreen, unread } from "./unread.js";
 import { notifies } from "./notify.js";
-import { ScreenWatch, screenStrips, openCard, cardsOf, starting, cliOf } from "./screens.js";
+import { ScreenWatch, screenStrips, openCard, cardsOf, starting, watching, cliOf } from "./screens.js";
 import { dayLabel, dayOf } from "./days.js";
 import { CallScreen } from "./call-screen.js";
 import { on as addonOn } from "./addons.js";
@@ -488,7 +488,7 @@ export default class Chat extends View {
     cx.timer.every(2500, (cx) => {
       if (!this.assistant() || this.workersLooking) return;
       const by = this.workerTasks();
-      const look = terminals().filter((k) => by.has(k.address) && (starting(k) || openCard(k.address) || this.lostCandidate(k)));
+      const look = terminals().filter((k) => by.has(k.address) && (watching(k) || openCard(k.address) || this.lostCandidate(k)));
       if (!look.length) return;
       this.workersLooking = true;
       cx.spawn(async (cx) => {
@@ -1002,6 +1002,7 @@ export default class Chat extends View {
 
   // The agent's status. Parked behind this chat it isn't in agents(); the core's word then.
   status() {
+    if (openCard(this.addr)) return "blocked";
     const a = agents().find((x) => x.address === this.addr);
     if (a) return a.status;
     const k = terminals().find((x) => x.address === this.addr);
@@ -1031,7 +1032,7 @@ export default class Chat extends View {
     const mine = this.myPane();
     if (Boolean(mine) && focused()?.pane === mine && window()?.active) return;
     const tab = mine && panes().find((p) => p.pane === mine)?.tab;
-    toast({ title: `${task?.ref ?? toastWho(k)} · Needs you`, body: `${card.cli} is waiting on its start screen.`, level: "alert",
+    toast({ title: `${task?.ref ?? toastWho(k)} · Needs you`, body: card.runtime ? `${card.cli} is waiting for your answer.` : `${card.cli} is waiting on its start screen.`, level: "alert",
       action: tab ? { name: "tab.select", args: { id: tab } } : undefined });
   }
 
@@ -1424,9 +1425,9 @@ export default class Chat extends View {
         await this.pull(cx);
         await this.lookJobs(cx);
         await this.flag();
-        // Its own start screen, while it has no session (or a card is still open).
+        // Startup screens and Cursor questions are read even before they reach the transcript.
         const k = this.ownTerminal();
-        if (k && (starting(k) || openCard(this.addr))) { await this.screens.tick(this.addr, k); cx.notify(); }
+        if (k && (watching(k) || openCard(this.addr))) { await this.screens.tick(this.addr, k); cx.notify(); }
         // The first message hc couldn't hand over (startAgent): once the agent is idle with no screen to answer.
         if (this.firstSend && k?.turn > 0) { this.firstSend = null; for (const p of this.pending) if (p.first) p.late = true; await this.saveDraft(); }
         if (this.firstSend && k?.status?.state === "idle" && !openCard(this.addr)) {
@@ -3120,7 +3121,7 @@ export default class Chat extends View {
     // Start screens answered or gone (screens.js): this agent's, and an Assistant's workers'.
     const screenEnds = [[this.addr, null], ...this.workerTasks()].flatMap(([addr, x]) => (addr ? cardsOf(addr) : [])
       .filter((c) => c.state !== "open").map((c) => ({ at: x?.ref ? this.afterNews(x.ref, c.opened) : c.opened,
-        row: { kind: "askend", id: `se:${c.id}`, text: `${x?.ref ? `${x.ref} · ` : ""}${c.cli}'s start screen · ${c.how}` } })));
+        row: { kind: "askend", id: `se:${c.id}`, text: `${x?.ref ? `${x.ref} · ` : ""}${c.cli}'s ${c.runtime ? "question" : "start screen"} · ${c.how}` } })));
     // Cards waiting on the person, in the timeline at their moment (DECISIONS, Chat): this
     // agent's own question in place of its "Asked you" line, the rest by time.
     const cards = this.timelineCards();
@@ -4550,7 +4551,8 @@ export default class Chat extends View {
     if (this.thread) return threadOf(this.addr);
     const c = chatPane(terminals().find((x) => x.address === this.addr));
     if (c && panes().some((p) => p.pane === c && p.mod === "chat")) this.lastPane = c;
-    return c || (this.swapping ? this.lastPane : null);
+    const pane = c || (this.swapping ? this.lastPane : null);
+    return panes().some((p) => p.pane === pane && p.mod === "chat") ? pane : null;
   }
 
   // One copy of Herdr's live lists for the whole render (live.js): a render past Herdr's 50 ms

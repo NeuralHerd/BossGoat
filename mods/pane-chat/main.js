@@ -140,7 +140,7 @@ export default class Pane extends View {
         // The agent knows its chat: if that pane goes with its tab or space, the agents list
         // ends the agent (parked.js sweep), as closing its own pane would have.
         await hc(["label", terminal, `${LABEL}=${chatLabel(out.pane)}`]);
-        run("pane.focus", { pane: out.pane });
+        await app("pane.focus", { pane: out.pane });
         // Last: parking removes this pane, and this header with it. The chat turns core keep
         // back on once the park has gone through (mods/chat).
         await app("terminal.park", { terminal });
@@ -173,7 +173,7 @@ export default class Pane extends View {
         await app("pane.focus", { pane: chat });
         const out = await app("terminal.keep", { terminal, place: "right" });
         await hc(["label", terminal, `${LABEL}=`]);
-        if (out.pane) run("pane.focus", { pane: out.pane });
+        if (out.pane) await app("pane.focus", { pane: out.pane });
         // Last: closing the chat removes this header too.
         await app("pane.close", { pane: chat });
       } catch (e) {
@@ -223,7 +223,8 @@ export default class Pane extends View {
     const space = isAssistant ? spaces().find((s) => s.tabs?.some((x) => x.id === self.tab)) : null;
     const name = art ?? (isAssistant ? spaceName(space, { home: home() }) : chatMode && p === self ? "Chat" : prog);
     const pic = art !== null ? svg("mods/artifacts/artifacts.svg").size(14).flex_none().text_color(t.dim) : icon(p.program, 14, t.dim);
-    const st = p.status;
+    const waiting = chatMode && (shared("chat.screens") ?? {})[agent ?? self.terminal]?.at(-1)?.state === "open";
+    const st = waiting ? "blocked" : p.status;
     const pane = self.pane;
     const canSwitch = chatMode ? Boolean(entry) || Boolean(lazy) : chatty(self);
     // An Assistant (chat or terminal): its Autopilot switch on the right, before the hover buttons (none while the
@@ -242,7 +243,7 @@ export default class Pane extends View {
       .text_size(TEXT.label)
       .on_hover((hovered, cx) => { this.hovered = hovered; if (!hovered) this.ending = false; cx.notify(); })
       .on_size_change((size, cx) => { if (Math.round(size.width) !== this.width) { this.width = Math.round(size.width); cx.notify(); } })
-      .on_click(() => run("pane.focus", { pane }))
+      .on_click(() => { if (panes().some((p) => p.pane === pane)) run("pane.focus", { pane }); })
       .when(Boolean(pic), (el) => el.child(pic))
       .child(div().flex_none().max_w(260).min_w(0).truncate().font_medium().text_color(t.foreground).child(name))
       // The folder gives way first; the switch keeps its width; the gap after pushes the rest right.
