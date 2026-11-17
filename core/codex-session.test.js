@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FIND } from "./chat-log.js";
 import { ChatReader } from "./chat-reader.js";
+import { sessionOf } from "./agents.js";
 import { cliOf } from "./screens.js";
 
 function fixture() {
@@ -88,8 +89,8 @@ test("desktop view switches never replace or clear the main chat while the appro
     const terminal = { state: "live", keep: true, labels: { "herdr.chat": "fixture" }, status: { app: "codex", state: "working" }, foreground: { pid: 99999999 } };
     const source = readFileSync(new URL("../mods/chat/main.js", import.meta.url), "utf8");
     const method = source.match(/\n  async locate\(cx\) \{\n[\s\S]*?\n  \}/)[0];
-    const locate = new Function("hc", "cliOf", "exec", "FIND", `return ({${method}}).locate`)(
-      async () => ({ stdout: JSON.stringify(terminal) }), cliOf, (_cmd, args) => f.sh(args[1], args.slice(2)), FIND);
+    const locate = new Function("hc", "cliOf", "exec", "FIND", "agent", `return ({${method}}).locate`)(
+      async () => ({ stdout: JSON.stringify(terminal) }), cliOf, (_cmd, args) => f.sh(args[1], args.slice(2)), FIND, { sessionOf });
     let resets = 0;
     const chat = { addr: "t1", phase: "ready", dfltFor: "codex|99999999", loadFirst() {}, reset() { resets++; } };
     for (const paths of [[main, review], [review, main], [review], [main]]) {

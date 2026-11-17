@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { restorePending, receipt } from "./delivery.js";
 import { Conversation } from "./chat-log.js";
+import { sessionOf } from "./agents.js";
+import { newsWords } from "./chat-view.js";
 
 const source = readFileSync(new URL("../mods/chat/main.js", import.meta.url), "utf8");
 const method = (name) => source.match(new RegExp(String.raw`\n  (?:async )?${name}\([^\n]*\) \{\n[\s\S]*?\n  \}`))[0];
@@ -114,5 +116,51 @@ test("reopening Cursor chat removes confirmed text and image drafts without rese
     const again = Object.assign(state(dir), make(dir));
     await again.loadDraft({ notify() {} });
     expect(again.pending).toHaveLength(0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test("only an unquoted session-reset command records the session it must replace", () => {
+  const deliver = new Function("messageBody", "norm", "slash", "openCard", "agent", "excerpt", `return ({${method("deliver")}}).deliver`)(
+    ({ text }) => text, (s) => s.trim(), { opensMenu: () => null }, () => null, { sessionOf }, (s) => s);
+  const session = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  for (const [kind, text, files, quote, reset] of [
+    ["cursor", "/clear", [], null, true], ["claude", "/clear", [], null, true], ["codex", "/new", [], null, true],
+    ["cursor", "/clear", [], { text: "A quoted example" }, false],
+    ["cursor", "Explain /clear", [], null, false], ["cursor", "/clear", [{ path: "/a.png", image: true }], null, false],
+  ]) {
+    const chat = { draftLoaded: true, phase: "ready", addr: "fixture", kind, path: `/logs/${session}.jsonl`, asks: [], pending: [], taskTags: () => "" };
+    deliver.call(chat, { id: "message", text, files, quote }, { spawn() {} });
+    expect(chat.pending[0].resetSession).toBe(reset ? session : undefined);
+  }
+});
+
+test("confirmed clear stays cleared after reopening and does not repopulate old task activity", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "desktop-clear-reopen-"));
+  try {
+    const original = Object.assign(state(dir), make(dir));
+    original.session = "new-session";
+    original.conv = { items: [] };
+    original.pending = [
+      { id: "legacy-clear", text: "/clear", at: 9000, attempted: true, cursorAfter: 500, msg: { text: "/clear", files: [] } },
+      { id: "ordinary", text: "Keep this", at: 9000, attempted: true, msg: { text: "Keep this", files: [] } },
+      { id: "clear", text: "/clear", at: 10000, attempted: true, resetSession: "old-session", msg: { text: "/clear", files: [] } },
+    ];
+    const save = original.saveDraft.bind(original);
+    let saved;
+    original.saveDraft = () => (saved = save());
+    original.settlePending();
+    await saved;
+    const reopened = Object.assign(state(dir), make(dir));
+    await reopened.loadDraft({ notify() {} });
+    expect(reopened.pending).toHaveLength(0);
+    expect(reopened.clearedAt).toBe(10000);
+    const newsLines = new Function("newsWords", `return ({${method("newsLines")}}).newsLines`)(newsWords);
+    Object.assign(reopened, { assistant: () => "space", start: 0, accepting: new Set(), spaceTasks: [
+      { ref: "TASK-1", space: "space", started: 1000, ready_at: 9000, done_at: 11000 },
+    ] });
+    const news = newsLines.call(reopened, []);
+    expect(news.extra.map((e) => e.at)).toEqual([11000]);
+    expect(reopened.spaceTasks).toHaveLength(1);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

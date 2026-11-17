@@ -7,6 +7,7 @@
 import { FIND, LOG, Conversation, records, resultText } from "./chat-log.js";
 import { BgJobs } from "./bg-jobs.js";
 import { cliOf } from "./screens.js";
+import { sessionOf } from "./agents.js";
 
 export const PAGE = 200;
 export const KEEP = 2000;
@@ -54,15 +55,16 @@ export class ChatReader {
     const kind = kindOf(t);
     const pid = t?.foreground?.pid;
     if (!kind || !pid) { const was = this.state; if (was !== "none") { this.reset(); this.state = "none"; } return was !== "none"; }
-    if (this.path && this.kind === kind && this.pid === pid) return false;
+    if (this.path && this.kind === kind && this.pid === pid && kind !== "cursor") return false;
     const f = await this.io.sh(FIND, ["chat", kind, String(pid)], this.machine);
     const path = String(f.stdout ?? "").trim().split("\n").pop() ?? "";
-    if (path === "pending" || !path) {
+    if (this.path && this.kind === kind && this.pid === pid && (!path || path === "pending" || path === `pending:${sessionOf(kind, this.path)}`)) return false;
+    if (/^pending(?::|$)/.test(path) || !path) {
       const was = this.state;
       this.reset();
       this.kind = kind;
       this.pid = pid;
-      this.state = path === "pending" ? "pending" : "none";
+      this.state = path.startsWith("pending") ? "pending" : "none";
       if (this.state === "pending") { this.conv = new Conversation(kind); this.start = 0; }
       return was !== this.state;
     }

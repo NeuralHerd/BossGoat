@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { argvFor, current, freshArgv, forkArgv, menuFor, parseDefaults, sessionOf } from "./agents.js";
 import { choicesFrom, chooseModel, modelLabel } from "./settings.js";
-import { kindOf } from "./chat-reader.js";
+import { ChatReader, kindOf } from "./chat-reader.js";
 import { receipt } from "./delivery.js";
-import { cliOf } from "./screens.js";
+import { cliOf, cursorEmpty } from "./screens.js";
 import { FIND, LOG, Conversation, records, afterSend } from "./chat-log.js";
 
 const sid = "12345678-1234-1234-1234-123456789abc";
@@ -215,19 +215,23 @@ test("a Cursor chat recovers from missing-log state while its first transcript i
   const source = readFileSync(new URL("../mods/chat/main.js", import.meta.url), "utf8");
   const method = source.match(/\n  async locate\(cx\) \{\n[\s\S]*?\n  \}/)[0];
   const terminal = { state: "live", status: { app: "cursor-agent", state: "idle" }, foreground: { pid: 999 }, labels: {} };
-  const locate = new Function("hc", "cliOf", "exec", "starting", "Conversation", "FIND", `return ({${method}}).locate`)(
-    async () => ({ stdout: JSON.stringify(terminal) }), cliOf, async () => ({ stdout: "pending\n" }), () => false, Conversation, FIND);
-  const self = { addr: "fixture", thread: true, phase: "none", dfltFor: "cursor|999", loadFirst() {}, set(phase) { this.phase = phase; } };
-  await locate.call(self, {});
+  const locate = new Function("hc", "cliOf", "exec", "starting", "Conversation", "FIND", "agent", `return ({${method}}).locate`)(
+    async () => ({ stdout: JSON.stringify(terminal) }), cliOf, async () => ({ stdout: "pending\n" }), () => false, Conversation, FIND, { sessionOf });
+  const self = { addr: "fixture", thread: true, phase: "none", dfltFor: "cursor|999", loadFirst() {}, reset() {}, settlePending() {} };
+  await locate.call(self, { notify() {} });
   expect(self.phase).toBe("ready");
   expect(self.conv.kind).toBe("cursor");
 });
 
 
-test("Cursor tailing survives replacement of the previous turn's completion marker", async () => {
+test.each([
+  { type: "turn_ended", status: "success" },
+  { type: "turn_ended", status: "aborted", error: "Cancelled by the user" },
+  { type: "turn_ended", status: "error", error: "Connection interrupted 🌞" },
+])("Cursor tailing survives a replaced completion marker: %j", async (footer) => {
   const dir = mkdtempSync(join(tmpdir(), "cursor-rewrite-"));
   try {
-    const file = join(dir, "log.jsonl"), end = '{"type":"turn_ended","status":"success"}\n';
+    const file = join(dir, "log.jsonl"), end = JSON.stringify(footer) + "\n";
     const old = cursorUser(`<timestamp>${stamp}</timestamp>\n<user_query>Continue 🌞</user_query>`).data + "\n";
     const read = async (mode, offset) => {
       const p = Bun.spawn(["sh", "-c", LOG, "log", mode, file, String(offset), "30"], { stdout: "pipe" });
@@ -277,4 +281,132 @@ test("Cursor image envelopes confirm the full sent message and keep previews aft
   expect(receipt(c.items, { text: "", sent: "/saved/different.png", at, cursorAfter: 500 })).toBeNull();
   expect(receipt(c.items, { text: "", at, cursorAfter: 500 })).toBeNull();
   expect(receipt([{ kind: "user", id: "other-image", text: "", images: 1, at }], { text: "", sent: "/saved/pasted.png", at })).toBeNull();
+});
+
+
+test("Cursor identifies a cleared session before its first transcript exists", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cursor-empty-session-"));
+  try {
+    const bin = join(dir, "bin"); mkdirSync(bin);
+    writeFileSync(join(bin, "lsof"), `#!/bin/sh\nprintf 'n%s/.cursor/chats/project/${sid}/store.db\\n' "$HOME"\n`, { mode: 0o755 });
+    const p = Bun.spawn(["sh", "-c", FIND, "find", "cursor", "99999999"], { env: { ...process.env, HOME: dir, PATH: `${bin}:${process.env.PATH}` }, stdout: "pipe" });
+    expect((await new Response(p.stdout).text()).trim()).toBe(`pending:${sid}`);
+    expect(await p.exited).toBe(0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("desktop clear follows the new empty session without a view switch or a false delivery warning", async () => {
+  const source = readFileSync(new URL("../mods/chat/main.js", import.meta.url), "utf8");
+  const methods = ["locate", "reset", "settlePending"].map((name) => source.match(new RegExp(String.raw`\n  (?:async )?${name}\([^\n]*\) \{\n[\s\S]*?\n  \}`))[0]).join(",");
+  const terminal = { state: "live", status: { app: "cursor-agent", state: "idle" }, foreground: { pid: 999 }, labels: {} };
+  let found = "pending", saved = 0, notified = 0;
+  const chat = new Function("hc", "cliOf", "exec", "starting", "Conversation", "FIND", "agent", "BgJobs", "receipt", `return ({${methods}})`)(
+    async () => ({ stdout: JSON.stringify(terminal) }), cliOf, async () => ({ stdout: found }), () => false, Conversation, FIND, { sessionOf }, class {}, receipt);
+  const old = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const clear = { id: "clear", text: "/clear", attempted: true, resetSession: old, at: 1000 };
+  const unsent = { id: "unsent", text: "/clear", resetSession: old, at: 1000 };
+  const message = { id: "message", text: "Keep my unconfirmed message", attempted: true, at: 1000 };
+  Object.assign(chat, { addr: "fixture", thread: true, phase: "ready", kind: "cursor", path: `/logs/${old}.jsonl`, session: old,
+    dfltFor: "cursor|999", loadFirst() {}, conv: { items: [{ kind: "user", id: "old", text: "Old conversation" }] },
+    pending: [clear, unsent, message], saveDraft: async () => { saved++; } });
+  const cx = { notify() { notified++; } };
+  // An inconclusive lookup must never erase a live conversation or acknowledge /clear.
+  await chat.locate(cx);
+  expect(chat.conv.items).toHaveLength(1);
+  expect(chat.pending).toHaveLength(3);
+  found = `pending:${old}`;
+  await chat.locate(cx);
+  expect(chat.conv.items).toHaveLength(1);
+  expect(chat.pending).toHaveLength(3);
+  found = `pending:${sid}`;
+  await chat.locate(cx);
+  expect(chat.path).toBeNull();
+  expect(chat.phase).toBe("ready");
+  expect(chat.conv.items).toHaveLength(0);
+  expect(chat.pending).toEqual([unsent]);
+  expect(saved).toBe(1);
+  expect(notified).toBeGreaterThan(0);
+  await chat.locate(cx);
+  expect(saved).toBe(1);
+});
+
+test("the shared reader follows Cursor clear even when the process stays the same", async () => {
+  let found = `/logs/${sid}.jsonl`;
+  const reader = new ChatReader({ sh: async () => ({ stdout: found }) }, "fixture");
+  const terminal = { status: { app: "cursor-agent" }, foreground: { pid: 999 } };
+  await reader.locate(terminal);
+  reader.conv = { items: [{ kind: "user", text: "Old conversation" }] };
+  reader.state = "ready";
+  found = "pending";
+  expect(await reader.locate(terminal)).toBe(false);
+  expect(reader.conv.items).toHaveLength(1);
+  found = `pending:${sid}`;
+  expect(await reader.locate(terminal)).toBe(false);
+  expect(reader.conv.items).toHaveLength(1);
+  found = "pending:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  expect(await reader.locate(terminal)).toBe(true);
+  expect(reader.path).toBeNull();
+  expect(reader.state).toBe("pending");
+  expect(reader.conv.items).toHaveLength(0);
+});
+
+
+const emptyScreen = `
+  Cursor Agent
+  v2026.11.13-example
+  Tip: Use /mcp to connect Cursor to your tools and data sources.
+
+ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+  → Plan, search, build anything
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  Model                                 Run Everything
+  /project · main
+`;
+
+test("only Cursor's fresh empty screen confirms a reset without a database", () => {
+  expect(cursorEmpty(emptyScreen)).toBe(true);
+  expect(cursorEmpty(emptyScreen.replace(" ▄", "  An earlier answer is still here\n ▄"))).toBe(false);
+  expect(cursorEmpty(emptyScreen.replace("→ Plan, search, build anything", "→ /clear"))).toBe(false);
+  expect(cursorEmpty("Cursor Agent\nSign in to continue")).toBe(false);
+  expect(cursorEmpty("")).toBe(false);
+});
+
+test("desktop clear follows the real empty Cursor screen even before a database is opened", async () => {
+  const source = readFileSync(new URL("../mods/chat/main.js", import.meta.url), "utf8");
+  const methods = ["locate", "reset", "settlePending"].map((name) => source.match(new RegExp(String.raw`\n  (?:async )?${name}\([^\n]*\) \{\n[\s\S]*?\n  \}`))[0]).join(",");
+  const terminal = { state: "live", status: { app: "cursor-agent", state: "done" }, foreground: { pid: 999 }, labels: {} };
+  const calls = [];
+  let screen = emptyScreen.replace("→ Plan, search, build anything", "→ /clear");
+  const chat = new Function("hc", "cliOf", "exec", "starting", "Conversation", "FIND", "agent", "BgJobs", "receipt", "cursorEmpty", `return ({${methods}})`)(
+    async (args) => { calls.push(args[0]); return { code: 0, stdout: args[0] === "read" ? screen : JSON.stringify(terminal) }; },
+    cliOf, async () => ({ stdout: "pending\n" }), () => false, Conversation, FIND, { sessionOf }, class {}, receipt, cursorEmpty);
+  Object.assign(chat, { addr: "fixture", thread: true, phase: "ready", kind: "cursor", path: `/logs/${sid}.jsonl`, session: sid,
+    dfltFor: "cursor|999", loadFirst() {}, saveDraft: async () => {}, conv: { items: [{ kind: "user", text: "Old conversation" }] }, pending: [
+      { id: "legacy", text: "A delivered message from the old session", attempted: true, at: 500 },
+      { id: "clear", text: "/clear", attempted: true, delivered: true, resetSession: sid, at: 1000 },
+      { id: "newer", text: "A message after the clear", attempted: true, at: 1500 },
+    ] });
+  await chat.locate({ notify() {} });
+  expect(chat.conv.items).toHaveLength(1);
+  expect(chat.pending).toHaveLength(3);
+  screen = emptyScreen;
+  await chat.locate({ notify() {} });
+  expect(chat.path).toBeNull();
+  expect(chat.session).toBeNull();
+  expect(chat.conv.items).toHaveLength(0);
+  expect(chat.clearedAt).toBe(1000);
+  expect(chat.pending.map((p) => p.id)).toEqual(["newer"]);
+  expect(calls.every((cmd) => cmd === "get" || cmd === "read")).toBe(true);
+});
+
+test("saved Cursor delivery positions recover variable footers without acknowledging older messages", () => {
+  const at = Date.parse("2026-11-11T13:49:55Z");
+  const c = new Conversation("cursor");
+  c.feed([cursorUser(`<timestamp>${stamp}</timestamp>\n<user_query>Continue</user_query>`, 37175)]);
+  const pending = { text: "Continue", at, cursorAfter: 37261, prior: ["u0"] };
+  expect(receipt(c.items, pending)?.id).toBe("u37175");
+  expect(receipt(c.items, { ...pending, prior: ["u37175"] })).toBeNull();
+  expect(receipt(c.items, { ...pending, prior: ["u40000"] })).toBeNull();
+  expect(receipt(c.items, { ...pending, at: at + 60000 })).toBeNull();
+  expect(receipt(c.items, { ...pending, prior: [] })).toBeNull();
 });

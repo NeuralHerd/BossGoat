@@ -32,6 +32,7 @@ import * as fs from "fs/promises";
 import { FIND, LOG, Conversation, records, resultText, summary, excerpt, names, pilotLine, afterSend } from "./core/chat-log.js";
 import { BgJobs } from "./core/bg-jobs.js";
 import { ChatReader } from "./core/chat-reader.js";
+import { cursorEmpty } from "./core/screens.js";
 import { preview } from "./core/recipe.js";
 import { words, howAnswered, codexOnScreen, codexSteps } from "./core/asks.js";
 // The rows' words and rules the web app's chat draws by too (core/chat-view.js).
@@ -651,6 +652,7 @@ export default class Chat extends View {
     this.pending = [...restorePending(d.pending).filter((p) => !current.has(p.id)), ...this.pending];
     this.firstSend = d.firstSend ?? null;
     this.firstTask = d.firstTask ?? this.firstTask;
+    this.clearedAt = Math.max(this.clearedAt ?? 0, d.clearedAt ?? 0);
     cx.notify();
   }
 
@@ -663,7 +665,7 @@ export default class Chat extends View {
     await this.draftReady;
     if (this.draftLoadError) { if (strict) throw new Error(this.draftLoadError); return; }
     const d = { text: this.box.value(), files: this.files, quote: this.quote, queue: this.queue,
-      pending: this.pending, firstSend: this.firstSend ?? null, firstTask: this.firstTask ?? null };
+      pending: this.pending, firstSend: this.firstSend ?? null, firstTask: this.firstTask ?? null, clearedAt: this.clearedAt ?? 0 };
     this.markTyping(!!(d.text.trim() || d.files.length || d.quote));
     const text = JSON.stringify(d), file = this.draftFile;
     const write = async () => {
@@ -1209,9 +1211,25 @@ export default class Chat extends View {
     // Not in its session yet (no report, no turn): perhaps on its own start screen, which
     // shows as a card under an empty chat.
     if (!path && starting(t)) path = "pending";
-    if (path === "pending") {
-      // A Claude Code that hasn't written its first line yet has no file: an empty chat.
-      if (this.phase === "finding" || this.phase === "none") { this.kind = kind; this.conv = new Conversation(kind); this.start = 0; this.set("ready", cx); }
+    let cleared = false;
+    if (kind === "cursor" && path === "pending") {
+      const clear = (this.pending ?? []).filter((p) => p.attempted && !p.msg?.stuck && !p.msg?.files?.length && !p.msg?.quote && p.text?.trim() === "/clear")
+        .reduce((last, p) => !last || p.at > last.at ? p : last, null);
+      if (clear) {
+        const screen = await hc(["read", this.addr]).catch(() => null);
+        if (screen?.code === 0 && cursorEmpty(screen.stdout)) { clear.cleared = true; this.session = null; cleared = true; }
+      }
+    }
+    const session = path.startsWith("pending:") ? path.slice(8) : agent.sessionOf(kind, path);
+    const changed = session && session !== (this.session ?? agent.sessionOf(this.kind, this.path));
+    if (session) this.session = session;
+    if (/^pending(?::|$)/.test(path)) {
+      // A known new session is empty; an inconclusive lookup must keep the current chat.
+      if (cleared || changed || this.phase === "finding" || this.phase === "none") {
+        this.path = null; this.kind = kind; this.reset();
+        this.conv = new Conversation(kind); this.start = 0; this.phase = "ready";
+        this.settlePending(); cx.notify();
+      }
       return;
     }
     if (!path) { if (this.phase !== "ready") this.set("none", cx); return; }
@@ -1231,6 +1249,7 @@ export default class Chat extends View {
     this.wasFocused = false;
     this.machine = addr.includes("/") ? addr.split("/")[0] : null;
     this.path = null;
+    this.session = null;
     this.dfltFor = null;
     this.reset();
     this.phase = "finding";
@@ -1263,7 +1282,12 @@ export default class Chat extends View {
     if (!this.pending?.length) return;
     const remaining = [...users];
     const before = this.pending.length;
+    for (const p of this.pending) if (p.attempted && !p.msg?.stuck && (p.cleared || p.resetSession && this.session && p.resetSession !== this.session)) {
+      this.clearedAt = Math.max(this.clearedAt ?? 0, p.at);
+    }
     this.pending = this.pending.filter((p) => {
+      // A confirmed clear retires the old conversation's delivery indicators, without replaying them.
+      if (p.attempted && p.at <= this.clearedAt) return false;
       const found = receipt(remaining, p);
       if (!found) return true;
       (this.own ??= new Set()).add(found.id);
@@ -1514,6 +1538,7 @@ export default class Chat extends View {
     const p = { id: `pending-${msg.id}`, text: msg.text, replyTo: msg.quote ? excerpt(msg.quote.text, 80) : null, files: msg.files.filter((f) => !f.image).map((f) => f.name),
       paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), cursorAfter: this.end, sent: body,
       match: norm(msg.text).slice(0, 60) || null, msg, prior: (this.conv?.items ?? []).filter((u) => u.kind === "user").map((u) => u.id) };
+    if (!msg.files.length && !msg.quote && msg.text.trim() === (this.kind === "codex" ? "/new" : "/clear")) p.resetSession = this.session ?? agent.sessionOf(this.kind, this.path);
     this.pending.push(p);
     const menu = msg.files.length ? null : slash.opensMenu(this.kind, msg.text);
     if (menu) this.note = { id: `note-${msg.id}`, text: `/${menu} opens a menu in the terminal. Switching to it.` };
@@ -2199,17 +2224,17 @@ export default class Chat extends View {
     if (!space) return { inline, extra };
     // A space's tasks make hundreds of lines: the last render's, unless what they're made of
     // changed (HERD-94: a render past Herdr's 50 ms is stopped).
-    const sig = [space, this.spaceTasks, items, items.length, items[items.length - 1]?.id, this.start,
+    const sig = [space, this.spaceTasks, items, items.length, items[items.length - 1]?.id, this.start, this.clearedAt,
       (this.wasks ?? []).map((a) => a.ref).join(","), [...this.accepting].join(",")];
     if (this.newsMemo?.sig.every((v, i) => v === sig[i])) return this.newsMemo.out;
     const tasks = new Map();
     for (const x of this.spaceTasks ?? []) if ((x.space ?? x.queue?.space) === space && x.ref && !tasks.has(x.ref)) tasks.set(x.ref, x);
     const all = [], said = new Set();
-    for (const it of items) if (it.kind === "news") { said.add(`${it.ref}:${it.event}`); all.push(it); }
+    for (const it of items) if (it.kind === "news" && !(it.at < this.clearedAt)) { said.add(`${it.ref}:${it.event}`); all.push(it); }
     // Placed before what this chat has loaded: shown once it's scrolled back to (the top).
     const first = items.find((x) => x.at)?.at ?? 0;
     for (const [ref, x] of tasks) for (const [event, at] of [["started", x.started], ["ready", x.ready_at], ["done", x.done_at]]) {
-      if (!Number.isFinite(at) || said.has(`${ref}:${event}`) || (at < first && this.start !== 0)) continue;
+      if (!Number.isFinite(at) || at < this.clearedAt || said.has(`${ref}:${event}`) || (at < first && this.start !== 0)) continue;
       all.push({ id: `tn:${ref}:${event}:${at}`, at, ref, event, text: "", made: true });
     }
     all.sort((a, b) => a.at - b.at);

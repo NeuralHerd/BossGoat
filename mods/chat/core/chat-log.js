@@ -67,7 +67,7 @@ while queue and time.monotonic() < deadline:
             sid = match[1]
             root = os.path.expanduser("~/.cursor/projects/*/agent-transcripts/")
             logs = glob.glob(root + sid + "/" + sid + ".jsonl") + glob.glob(root + sid + ".jsonl")
-            print(next((f for f in logs if os.path.isfile(f)), "pending"))
+            print(next((f for f in logs if os.path.isfile(f)), "pending:" + sid))
             sys.exit(0)
     queue.extend(p for p in run(["pgrep", "-P", pid]).split() if p.isdigit())
 print("pending")
@@ -102,8 +102,9 @@ mode="$1"; f="$2"
 [ -f "$f" ] || { echo "missing"; exit 0; }
 s=$(wc -c < "$f" | tr -d ' ')
 # Cursor replaces this trailing marker when the next prompt arrives.
-if [ "$s" -ge ${CURSOR_TURN_END.length + 1} ] && [ "$(tail -c +$((s - ${CURSOR_TURN_END.length})) "$f" | head -c ${CURSOR_TURN_END.length + 1})" = '${CURSOR_TURN_END}' ]; then
-  s=$((s - ${CURSOR_TURN_END.length + 1}))
+if [ "$s" -gt 0 ] && [ -z "$(tail -c 1 "$f")" ]; then
+  footer=$(tail -n 1 "$f" | LC_ALL=C awk '/^\{"type":"turn_ended",.*\}$/ { print length($0) + 1 }')
+  if [ -n "$footer" ] && [ "$footer" -le "$s" ]; then s=$((s - footer)); fi
 fi
 X='
 BEGIN { pos = base; first = base; msgs = 0 }
@@ -229,7 +230,9 @@ export function afterSend(message, sent) {
     if (message.cursorOffset >= sent.cursorAfter) return true;
     // Older saved drafts counted the marker that Cursor overwrites. Its minute timestamp
     // must still belong to this send; earlier turns and prior IDs cannot confirm it.
-    return message.cursorOffset + CURSOR_TURN_END.length + 1 === sent.cursorAfter
+    const prior = (sent.prior ?? []).flatMap((id) => { const m = /^u(\d+)$/.exec(id); return m ? [Number(m[1])] : []; });
+    const newer = prior.length > 0 && message.cursorOffset > Math.max(...prior);
+    return (newer || message.cursorOffset + CURSOR_TURN_END.length + 1 === sent.cursorAfter)
       && message.at > 0 && message.at >= Math.floor(sent.at / 60000) * 60000;
   }
   return (message.at ?? 0) >= sent.at - 5000;

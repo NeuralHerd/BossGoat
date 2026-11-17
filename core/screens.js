@@ -121,6 +121,15 @@ const RETRY = 10000;      // a pressed choice has this long to leave the screen 
 export const KEEP = 6;    // closed cards kept per agent (their quiet lines)
 export const CLI = { claude: "Claude Code", codex: "Codex", cursor: "Cursor" };
 
+// The fresh Cursor screen has no conversation between its banner and empty input.
+export function cursorEmpty(text) {
+  const lines = cleaned(text).map((line) => line.trim()).filter(Boolean);
+  const box = lines.findIndex((line) => /^▄{4,}$/.test(line));
+  return box >= 2 && lines[0] === "Cursor Agent" && /^v\S+$/.test(lines[1])
+    && lines.slice(2, box).every((line) => line.startsWith("Tip: "))
+    && lines[box + 1] === "→ Plan, search, build anything" && /^▀{4,}$/.test(lines[box + 2] ?? "");
+}
+
 // Cursor's bundled Node runtime keeps cursor-agent as argv[0], but reports its process name as node.
 export function cliOf(k) {
   const kind = (name) => {
