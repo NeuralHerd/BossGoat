@@ -8,7 +8,8 @@ const read = (p) => readFileSync(join(root, p), "utf8");
 
 test("the window's askers say what core/confirm.js says, and the web reads it from there", () => {
   const coord = read("lib/coordinator.js"), popups = read("mods/spaces-chat/popups.js");
-  for (const src of [coord, popups]) {
+  expect(popups).toContain('import { requestCoordinator, closeSpace } from "./coordinator.js"');
+  for (const src of [coord]) {
     expect(src).toContain(`detail: "${CLOSE_SPACE.detail}"`);
     expect(src).toContain(`verb: "${CLOSE_SPACE.verb}"`);
   }

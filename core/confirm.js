@@ -9,7 +9,7 @@ export const PROMPT = { label: "Name", verb: "Save", cancel: "Cancel" };
 // Close a space (its menu's Close…, a tab bar's last tab): then Herdr's close, confirmed.
 export const CLOSE_SPACE = {
   title: (name) => (name && name !== "~" ? `Close “${name}”?` : "Close this space?"),
-  detail: "Its tabs close and every program in them ends.",
+  detail: "The Assistant and tasks keep running. Reopen this folder to return to them. Other terminal programs end.",
   verb: "Close space",
 };
 

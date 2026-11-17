@@ -80,6 +80,8 @@ def news_line(s, t, v, event, words=None):
             "backup": f"{ref} backup: {words} ({title})",
             "done": f"{ref} is done" + (": merged" if t.get("merged") else ": nothing to merge" if t.get("nothing_to_merge")
                                         else ": accepted" if t.get("accepted_at") else "") + f" ({title})"}[event]
+    if event == "ready" and t.get("research_report"):
+        text += " · Research report: " + t["research_report"]
     return f'<herdr-news task="{attr(ref)}" event="{event}">{text.replace("<", "‹").replace(">", "›")}</herdr-news>'
 
 

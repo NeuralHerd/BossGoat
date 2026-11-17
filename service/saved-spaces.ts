@@ -6,9 +6,9 @@
 // - only the space or tab asked for changes; every other space stays as it is, and a document without spaces is
 //   never written;
 // - on the machine that holds it ("vm/sp1": vm's document, reached through herdr-core's link).
-// A close also ends what ran in it (its tabs' terminals, its Assistant, agents parked on its panes), as the window's
-// close does, but never a terminal another space still shows.
-import { chatLabel } from "../core/spaces.js";
+// Closing ends ordinary terminal programs. Assistants and task workers remain recoverable,
+// as do terminals another space still shows.
+import { chatLabel, keepsWork } from "../core/spaces.js";
 
 type Call = { call<T = any>(method: string, params?: Record<string, unknown>, timeout?: number): Promise<T>; terminals: Map<string, any> };
 
@@ -77,7 +77,7 @@ export async function closeSaved(hub: Call, place: string) {
     // its Assistant, and agents parked on one of its panes (the window's sweep ends those once their pane is gone)
     if ((l["herdr.role"] === "coordinator" && l["herdr.coordinator.space"] === id) || panes.has(chatLabel(l["herdr.chat"]))) end.add(t.address);
   }
-  for (const a of end) if ((hub.terminals.get(a) as any)?.state === "live") await hub.call("terminal.kill", { terminal: a }).catch(() => null);
+  for (const a of end) if ((hub.terminals.get(a) as any)?.state === "live" && !keepsWork(hub.terminals.get(a))) await hub.call("terminal.kill", { terminal: a }).catch(() => null);
   return { id: place, machine, name: gone.name ?? null, folder: gone.folder ?? null };
 }
 

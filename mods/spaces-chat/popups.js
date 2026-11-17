@@ -14,10 +14,9 @@ import { withMachineOrder } from "./core/spaces.js";
 import { assistantOf, markRead } from "./unread.js";
 import { NOTIFY, notifyOf, setNotify } from "./notify.js";
 import { openRename, openNewSection, openRenameMachine } from "./rename.js";
-import { logSpace } from "./spacelog.js";
 import { menuRow, segmented, TEXT, openSettings } from "./ui.js";
 import { addMenu, spaceMenu, machineMenu, sectionMenu } from "./core/menus.js";
-import { requestCoordinator } from "./coordinator.js";
+import { requestCoordinator, closeSpace } from "./coordinator.js";
 
 const ROW = 32, PAD = 5, SEP = 9, W = 210;
 // The Notify setting (a space's menu): its labeled row, then a small note under it. A menu with it
@@ -26,17 +25,6 @@ const SETTING = 32, NOTE = 20, W_SETTING = 270;
 // Columns every row shares (ui.js menuRow): the 16 icon at the row's padding, text after icon + gap.
 const ROW_X = 8, ICON = 16, ICON_GAP = 8, TEXT_X = ROW_X + ICON + ICON_GAP;
 const icon = (name) => (name.includes("/") ? name : `mods/workspace-chrome/${name}.svg`);
-
-// Close a space: our confirm (mods/confirm-chat), its button the verb; then Herdr's close, confirmed.
-function closeSpace(id, name) {
-  const w = spaces().find((s) => s.id === id);
-  openOverlay({ mod: "confirm-chat", kind: "dialog", width: 400, height: 168, props: {
-    title: `Close “${name ?? w?.name ?? "this space"}”?`,
-    detail: "Its tabs close and every program in them ends.",
-    verb: "Close space",
-    command: { name: "space.close", args: { id, confirmed: true } } } });
-  logSpace("close", id, "spaces-chat: space menu Close (asks in confirm-chat)");
-}
 
 export { rectOf } from "./rename.js";
 
@@ -75,7 +63,7 @@ const ITEMS = {
     // Its own settings: the Settings window, scoped to this space.
     settings: () => openSettings({ space: p.space }),
     "worktree-new": () => worktree(p.space, "new"), "worktree-open": () => worktree(p.space, "open"), "worktree-remove": () => worktree(p.space, "remove"),
-    close: () => closeSpace(p.space, p.name),
+    close: () => closeSpace(p.space),
   }),
   // A machine header's right-click: its name and emoji (rename.js), and its place among the machines (p.order: as they
   // show; shared "spaces-chat".machineOrder, as the web app's Move up / Move down).

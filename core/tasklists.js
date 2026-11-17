@@ -34,7 +34,7 @@ export function taskLists(stdout) {
     let d = null;
     try { d = JSON.parse(x.slice(nl + 1)); } catch {}
     const slug = x.slice(0, nl).replace(/\.json$/, "");
-    if (slug && isTaskList(d)) out.push({ slug, ...d });
+    if (slug && isTaskList(d)) out.push({ slug, ...d, tasks: d.tasks.map(({ research_notes, ...task }) => task) });
   }
   return out;
 }

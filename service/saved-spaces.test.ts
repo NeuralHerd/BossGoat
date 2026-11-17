@@ -72,13 +72,13 @@ function world() {
 }
 const ids = (d: any) => d.value.spaces.map((s: any) => s.id);
 
-test("a window space closes with no window: gone from this computer's saved spaces, what ran in it ends", async () => {
+test("a window space closes with no window: gone from saved spaces, its Assistant survives", async () => {
   const w = world();
   const gone = await closeSaved(w.hub, "spA");
   expect(gone).toEqual({ id: "spA", machine: null, name: "Home", folder: "~" });
   expect(ids(w.docs.here)).toEqual(["spB", "spC"]);                 // the other Home stays
   expect(w.docs.here.version).toBe(8);
-  expect(w.killed.sort()).toEqual(["t1", "t8", "t9"]);              // its tab's terminal, its Assistant, its parked agent
+  expect(w.killed.sort()).toEqual(["t1", "t8"]);              // its tab's terminal, its Assistant, its parked agent
   expect(w.docs.vm.version).toBe(3);                                // another machine's spaces untouched
 });
 
@@ -88,7 +88,7 @@ test("another machine's space closes there: only its document changes, only its 
   expect(ids(w.docs.vm)).toEqual(["sp2"]);
   expect(w.writes).toEqual(["vm"]);
   expect(w.docs.here.version).toBe(7);
-  expect(w.killed.sort()).toEqual(["vm/t1", "vm/t5"]);              // not this computer's t1 or t5
+  expect(w.killed.sort()).toEqual(["vm/t1"]);              // not this computer's t1 or t5
 });
 
 test("a window that writes meanwhile isn't overwritten: the close lands on top of its write", async () => {
@@ -203,4 +203,22 @@ test("the machines dragged into a new order: kept for every device, this compute
   c.data["spaces-chat"].machineOrder = ["far", "", "vm"];
   await act(w.hub as any, { type: "order", under: "all", ids: ["m:vm", "m:mini"] }, c);
   expect(c.data["spaces-chat"].machineOrder).toEqual(["far", "vm", ""]);
+});
+
+
+test("a task displayed as a terminal survives closing its saved space", async () => {
+  const w = world();
+  w.hub.terminals.get("t1").labels = { "herdr.task": "folder#1" };
+  await closeSaved(w.hub, "spA");
+  expect(w.killed).toEqual(["t8"]);
+});
+
+
+test("web close with no window still works when a saved Assistant had a terminal tab", async () => {
+  const w = world(), c: any = compat(w);
+  w.hub.terminals.get("t9").labels["herdr.tab"] = "tbA";
+  c.spaceOf = () => ({ id: "spA", folder: "~", machine: null });
+  expect(await act(w.hub as any, { type: "space-remove", place: "spA" }, c)).toEqual({ ok: true });
+  expect(w.killed).not.toContain("t9");
+  expect(ids(w.docs.here)).toEqual(["spB", "spC"]);
 });

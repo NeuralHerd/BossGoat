@@ -132,6 +132,17 @@ export async function newSpace(hub: Hub, opts: { machine: string | null; path: s
   await iconOf(machine ? `${machine}/${id}` : id);
   // Settings › Window › Assistant in new spaces off: it opens without one
   if (opts.store.value("coordinator.auto") === false) return machine ? `${machine}/${id}` : id;
+  let saved: any[] | null = null;
+  try {
+    const doc = await hub.call<any>("doc.get", { name: "herdr-app", ...(machine ? { on: machine } : {}) });
+    saved = (SP.spacesFromDoc as any)(doc.value ?? {}, machine);
+  } catch { /* Without the layout, an old Assistant's ownership is unknown. */ }
+  const running = saved && SP.detachedAssistant({ id, machine, folder: abs }, [...hub.terminals.values()], [...list, ...saved], () => false);
+  if (running) {
+    const r = await run(["hc", "label", running.address, ...SP.assistantLabels(running, id, abs)]);
+    if (r.code !== 0) throw new Error("Couldn't reconnect the previous Assistant.");
+    return machine ? `${machine}/${id}` : id;
+  }
   const t = await execTemplate(hub, "assistant", machine);
   await run(["hc", "run", "--bg", "--keep", "--no-parent", ...(machine ? ["--on", machine] : []), "--cwd", abs,
     "--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${id}`, "--label", `herdr.space=${id}`, ...(t.background ? ["--label", "herdr.assistant.context=background"] : []), t.name]);

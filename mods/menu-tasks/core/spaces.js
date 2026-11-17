@@ -23,6 +23,33 @@ export function chatPane(k) {
   return m ? `${m}/${id}` : id;
 }
 
+// Closing a view must not terminate work owned by an Assistant or a saved task.
+export const keepsWork = (k) => k?.state === "live" && Boolean(k.labels?.["herdr.task"]
+  || k.labels?.["herdr.role"] === "coordinator" || ["assistant", "coordinator"].includes(k.template));
+
+export function detachedAssistant(space, terminals, spaces, shown) {
+  const machine = space.machine ?? null, id = chatLabel(space.id);
+  const candidates = terminals.filter((k) => keepsWork(k) && !k.labels?.["herdr.task"]
+    && machineOf(k.address) === machine && !shown(k));
+  const owner = (k) => k.labels?.["herdr.coordinator.space"] || k.labels?.["herdr.space"];
+  const same = candidates.filter((k) => owner(k) === id);
+  if (same.length) return same.length === 1 ? same[0] : null;
+  const active = new Set(spaces.filter((s) => (s.machine ?? null) === machine).map((s) => chatLabel(s.id)));
+  const folder = (p) => String(p ?? "").replace(/\/$/, "");
+  const matches = candidates.filter((k) => !active.has(owner(k)) && folder(space.folder)
+    && folder(k.labels?.["herdr.coordinator.folder"] || k.cwd) === folder(space.folder));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+export function assistantLabels(k, space, folder) {
+  const labels = k?.labels ?? {};
+  const old = labels["herdr.coordinator.space"] || labels["herdr.space"];
+  const previous = new Set((labels["herdr.coordinator.previous"] || "").split(",").filter(Boolean));
+  if (old && old !== chatLabel(space)) previous.add(old);
+  return [`herdr.coordinator.space=${chatLabel(space)}`, `herdr.coordinator.folder=${folder}`,
+    `herdr.coordinator.previous=${[...previous].join(",")}`];
+}
+
 // A space's Assistant: the live coordinator terminal labelled for it, on the space's machine (labels hold that
 // machine's own ids, without the "<machine>/" an app id has).
 export function assistantOf(space, ts) {

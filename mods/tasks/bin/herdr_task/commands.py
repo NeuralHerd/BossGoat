@@ -35,6 +35,7 @@ from .holycow import require_assignment
 from .scheduler import ensure_scheduler
 from .proof import evidence, find_proof
 from .when import when_from
+from . import research
 
 
 # ---- commands -------------------------------------------------------------------------------
@@ -103,19 +104,22 @@ def cmd_add(args):
         if args.worktree and not repo:
             raise Fail("Worktrees need a git repo; this folder isn't one.")
         # The person's setting wins: worktrees off for this repo means in the folder, --worktree or not.
-        mode = "here" if args.here or not worktrees_on(s) else "worktree"
+        mode = "here" if args.here or getattr(args, "research", False) or not worktrees_on(s) else "worktree"
         t = s.new(args.title.strip(), prompt, mode)
         set_opts(t, args)
         space = bare(args.space) if args.space else caller_space()
         set_base(s, t, args.base, space, new=True)
         set_branch(s, t, getattr(args, "branch", None))
         set_notes(t, args)
+        research.configure(t, args)
         if args.after:
             set_after(s, t, *parse_after(s, args.after))
         if at:
             require_assignment(t)
             # Started later by the scheduler, with no caller to ask: its space is kept now.
             schedule(s, t, at, {"space": space or default_space()})
+        if t.get("research"):
+            research.checkpoint(s, t, argparse.Namespace(next_steps="Investigate the question and save findings with sources."))
         v = view(s, t)
     if at:
         ensure_scheduler_quietly()
@@ -230,6 +234,8 @@ def cmd_show(args):
             # What the Accept card shows: commits, files, checks and the proof (proof.py).
             v["evidence"] = evidence(s, t)
     text = [line(v), f"folder: {v['folder']}"]
+    if v.get("research_report"):
+        text.append(f"research report: {v['research_report']}")
     if v.get("worktree"):
         text.append(f"worktree: {v['worktree']} (branch {v['branch']}, base {v.get('base')})")
     elif v.get("branch") and v.get("mode") == "worktree":
@@ -258,6 +264,14 @@ def cmd_show(args):
         text.append("\n" + v["prompt"].strip())
     text.append("\n" + block)
     say(args, v, "\n".join(text))
+
+
+def cmd_checkpoint(args):
+    with open_store(args) as s:
+        t = s.find(args.id)
+        research.checkpoint(s, t, args)
+        result = {"ref": s.ref(t), "report": t["research_report"], "updated": t["research_updated"]}
+    say(args, result, f"Saved {result['ref']} research: {result['report']}")
 
 
 def cmd_preview(args):
@@ -301,6 +315,7 @@ def cmd_start(args):
         elif args.worktree and worktrees_on(s):
             t["mode"] = "worktree"
         set_branch(s, t, getattr(args, "branch", None))
+        research.configure(t, args)
         plan = start_choices(s, t, space=args.space, agent=args.agent, argv=args.argv, parent=args.parent)
         argv, space, parent = plan["argv"], plan["space"], plan["parent"]
         at = scheduled_at(args)
@@ -359,6 +374,10 @@ def cmd_ready(args):
             refresh_sessions(s, t, [k for k in live_agents(s.key(t)) if k["address"] == me])
         if t["state"] == "done":
             raise Fail(f"{s.ref(t)} is already done.")
+        if t.get("research"):
+            notes = t.get("research_notes") or {}
+            if not notes.get("findings") or not notes.get("sources"):
+                raise Fail("Save research findings and sources with checkpoint before saying ready.")
         wt = t.get("worktree") if t.get("mode") == "worktree" else None
         if wt and os.path.isdir(wt):
             if git(wt, "status", "--porcelain", "--untracked-files=no")[1]:
@@ -849,6 +868,7 @@ def cmd_edit(args):
         if t["mode"] != "worktree" and not t.get("worktree"):
             t.pop("branch", None)
         set_branch(s, t, getattr(args, "branch", None))
+        research.configure(t, args)
         s.dirty = True
         tabs = task_tabs(s, t) if t["title"] != old else []
         v = view(s, t)

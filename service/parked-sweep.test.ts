@@ -8,6 +8,8 @@ import { fakeHerdr } from "./fake-herdr";
 type View = { machines: any[]; panes: any[]; terminals: any[]; spaces: any[] };
 let view: View;
 let killed: string[];
+let preserved: string[] = [];
+let failKeep = false;
 // bun keeps one "herdr" module for the whole run, and a later file's mock.module can only change the names it has:
 // so this mock has every name (fake-herdr.ts).
 mock.module("herdr", () => fakeHerdr({
@@ -22,8 +24,8 @@ mock.module("herdr", () => fakeHerdr({
   focused: () => null,
   shared: () => null,
   run: (name: string, args: any) => { if (name === "terminal.kill") killed.push(args.terminal); },
-  exec: async () => ({ code: 0, stdout: "", stderr: "" }),
-  hc: async () => ({ code: 0, stdout: JSON.stringify({ keep: true }), stderr: "" }),
+  exec: async (_cmd: string, args: string[]) => { preserved.push("park:" + args.at(-1)); return { code: 0, stdout: "", stderr: "" }; },
+  hc: async (args: string[]) => { if (args[0] === "keep") preserved.push("keep:" + args[1]); return { code: args[0] === "keep" && failKeep ? 1 : 0, stdout: JSON.stringify({ keep: true }), stderr: "keep failed" }; },
   appHome: () => "/nonexistent",
 }));
 const { sweep, chatAgents } = await import("../mods/tabs-tasks/parked.js");
@@ -78,4 +80,28 @@ test("the label holds the pane as its own machine names it, read back as each wi
   expect(chatPane({ address: "t1", labels: { "herdr.chat": "vmb/p7" } })).toBe("p7");
   expect(chatPane({ address: "t1", labels: {} })).toBe(null);
   expect(chatPane(undefined)).toBe(null);
+});
+
+
+test("closing Assistant and task chat panes preserves their work on both machines", () => {
+  for (const v of [windowA("p7", ""), windowB("p7", "")]) {
+    for (const labels of [{ "herdr.role": "coordinator" }, { "herdr.task": "folder#1" }]) {
+      v.terminals[0].labels = { "herdr.chat": "p7", ...labels };
+      expect(sweeps(v)).toEqual([]);
+    }
+  }
+});
+
+
+const { keepWork } = await import("../mods/tabs-tasks/keep-work.js");
+test("visible workers are parked before keep is restored; parked workers are not detached again", async () => {
+  preserved = [];
+  await keepWork([{ address: "visible", attached: true }, { address: "parked", attached: false }]);
+  expect(preserved).toEqual(["park:visible", "keep:visible", "keep:parked"]);
+});
+
+test("failed preservation refuses the close rather than losing work", async () => {
+  failKeep = true;
+  try { await expect(keepWork([{ address: "t1", attached: false }])).rejects.toThrow("keep failed"); }
+  finally { failKeep = false; }
 });

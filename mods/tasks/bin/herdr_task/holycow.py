@@ -81,6 +81,8 @@ def assistant_words(cfg):
             "Create software work with `herdr-task add ... --skill <skill-id>`; automations also accept --skill. BossGoat chooses its agent "
             "and model from HolyCow Agents settings. Do not copy stale model choices into --agent/--model/--effort; "
             "use those overrides only when the person asks. Guide's model is for delegated Guide tasks; it does "
-            "not replace this running Assistant. Greetings, facts, status and board administration need no skill task. "
+            "not replace this running Assistant. Multi-step research uses one task per goal with --research; reuse it for follow-ups. "
+            "Research saves checkpoints outside chat, stays read-only and needs no worktree, code review or pull request. "
+            "Return its short summary and research_report link, not its transcript. Greetings, facts, status and board administration need no skill task. "
             "If a needed skill is missing, report it; do not silently run without it. The existing worker-led review "
             "uses hc-review, once, when review is on. Models for new skill tasks: " + "; ".join(picks))

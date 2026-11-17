@@ -7,7 +7,7 @@
 
 import { focused, shared, machines, run, exec, hc, appHome } from "herdr";
 import { panes, terminals, spaces } from "./live.js";
-import { chatPane } from "./core/spaces.js";
+import { chatPane, keepsWork } from "./core/spaces.js";
 
 export const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 const STATES = ["working", "blocked", "done", "idle"];
@@ -57,7 +57,7 @@ export function spacesWithChats() {
 }
 
 // A parked agent carries the core label herdr.chat=<its chat pane>. When that pane is gone
-// (its tab or space closed, even one never shown since Herdr started), the agent ends, as
+// (its tab or space closed), Assistants and task workers remain recoverable. Other agents end as
 // closing its pane would have ended it, and its chat flag and asks go with it. While the pane
 // is there, core keep is kept on. A machine is
 // only judged once its layout has loaded, and a pane must be missing twice in a row.
@@ -83,6 +83,11 @@ export function sweep() {
       missing.delete(k.address);
       // Parking turned core keep off: on again, so it survives a lost core like a pane's terminal.
       if (have.has(chat) && !own.has(k.address) && !kept.has(k.address)) keepOn(k.address);
+      continue;
+    }
+    if (keepsWork(k)) {
+      missing.delete(k.address);
+      if (!kept.has(k.address)) keepOn(k.address);
       continue;
     }
     if (!missing.has(k.address)) { missing.set(k.address, true); continue; }

@@ -272,6 +272,17 @@ def inherit_permission(argv, source):
     return [argv[0], *permission_argv(agent, perm), *(v for i, v in enumerate(argv[1:], 1) if i not in remove)]
 
 
+def research_argv(task, argv):
+    if not task.get("research"):
+        return argv
+    agent = agent_key(argv)
+    if agent not in ("claude", "codex", "cursor"):
+        raise Fail("Research requires Claude Code, Codex or Cursor read-only mode.")
+    remove = {i for start, end, _, _ in permission_tokens(argv) for i in range(start, end)}
+    return [argv[0], *permission_argv(agent, "plan" if agent == "claude" else "read-only"),
+            *(v for i, v in enumerate(argv[1:], 1) if i not in remove)]
+
+
 def worker_pick(s, task, space=None, agent=None):
     """What a task's agent runs on, {agent, model, effort, fast, perm}: its skill (Workers for non-software), then the
     task's own --agent / --model / --effort, then `agent` (start --agent). Another CLI than
@@ -490,6 +501,8 @@ def task_settings(s, t, space=None, argv=None):
     def add(label, text, value, by):
         lines.append({"label": label, "text": text, "value": value, "by": by})
 
+    if t.get("research"):
+        add("Task mode", "Research: read-only, with saved findings and sources", "research", "task")
     rounds_cfg = int(k.get("review_rounds") or 0)
     # The Review its brief gave (keep_review): a setting changed while it runs is for tasks added
     # later, as the change's notice says (#750); the Assistant's own --set for it still wins.
@@ -502,7 +515,7 @@ def task_settings(s, t, space=None, argv=None):
         on, rev_by = bool(kept.get("on")), kept.get("by")
     else:
         on, rev_by = rounds_cfg > 0, by_layer(s, space, "tasks", "review_rounds", rounds_cfg > 0, False)
-    if t.get("skill") == "hc-review":
+    if t.get("skill") == "hc-review" or t.get("research"):
         on, rev_by = False, "task"
     here = t.get("mode") != "worktree"
     add("Review", "off" if not on else "on", on, rev_by)
@@ -554,7 +567,7 @@ def task_settings(s, t, space=None, argv=None):
         if t.get("base_set"):
             add("Base", f"{t['base']}: your branch starts from it and merges into it", t["base"],
                 "folder" if t.get("base_by") == "space" else "task")
-    proof = sets["proof"] == "on" if "proof" in sets else k.get("proof") is not False
+    proof = not t.get("research") and (sets["proof"] == "on" if "proof" in sets else k.get("proof") is not False)
     add("Proof", PROOF_WORDS["on" if proof else "off"], proof,
         "task" if "proof" in sets else by_layer(s, space, "tasks", "proof", proof, True))
     model, effort = argv_model(argv)

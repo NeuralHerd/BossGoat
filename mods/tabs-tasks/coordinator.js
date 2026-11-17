@@ -11,9 +11,10 @@
 
 import { appHome, exec, hc, run, openOverlay, shared, setShared, home, machines, focused, readTextFile } from "herdr";
 import { dirs } from "./dirs.js";
+import { keepWork } from "./keep-work.js";
 import { isWorktreePath } from "./core/paths.js";
 import { terminals, panes, spaces as allSpaces } from "./live.js";
-import { chatPane, chatLabel } from "./core/spaces.js";
+import { chatPane, chatLabel, detachedAssistant, keepsWork, assistantLabels } from "./core/spaces.js";
 import { logSpace } from "./spacelog.js";
 import { toast, plainError } from "./ui.js";
 
@@ -166,10 +167,8 @@ const machineReady = (name) => machines().find((m) => (m.name ?? null) === (name
 // A space's Assistant already running on its machine with no chat of its own here (started from
 // the web app, or its tab closed while it ran on): the new tab takes it instead of starting another.
 function runningAssistant(space, ps = panes()) {
-  const id = String(space.id).split("/").pop(), machine = space.machine ?? "";
   const shown = (k) => ps.some((p) => p.terminal === k.address || (p.mod === "chat" && p.pane === chatPane(k)));
-  return terminals().find((k) => isCoordinator(k) && split(k.address)[0] === machine && !shown(k)
-    && [k.labels?.["herdr.coordinator.space"], k.labels?.["herdr.space"]].includes(id)) ?? null;
+  return detachedAssistant(space, terminals(), allSpaces(), shown);
 }
 
 // Opens a space's coordinator tab, first in the space: a chat with no agent yet, which starts
@@ -187,7 +186,7 @@ export async function openCoordinator(space, show = true, settings = null) {
   if (!settings) settings = shepherdrFor(await readShepherdr(), space.id).coordinator;
   const slot = `coord-${space.id}-${Math.random().toString(36).slice(2, 10)}`;
   const was = focused();
-  const running = runningAssistant(space);
+  const running = runningAssistant({ ...space, folder });
   try {
     const out = await app("tab.new", { space: space.id, name: "Assistant", mod: "chat",
       props: { role: "coordinator", template: "assistant", space: space.id, folder, slot, ...(settings ? { settings } : {}) } });
@@ -195,7 +194,7 @@ export async function openCoordinator(space, show = true, settings = null) {
     setShared("coordinator.slots", { ...liveSlots(), [slot]: { space: space.id, tab: out.tab, pane, folder } });
     // The chat follows the agent its slot names (mods/chat adoptSlot).
     if (running && pane) await hc(["label", running.address, `herdr.chat=${chatLabel(pane)}`, `herdr.chat.slot=${slot}`, `herdr.chat.origin=slot:${slot}`,
-      `herdr.coordinator.tab=${String(out.tab).split("/").pop()}`]).catch(() => {});
+      `herdr.coordinator.tab=${String(out.tab).split("/").pop()}`, ...assistantLabels(running, space.id, folder)]);
     await app("tab.move", { id: out.tab, index: 1 });
     if (show) {
       if (!space.active) run("space.select", { id: space.id });
@@ -481,7 +480,13 @@ export const restartAgent = (k, argv) => script("restart", argv ? [k.address, JS
 
 // Closes a tab. A coordinator with live workers asks first; a space's last tab closes the space,
 // so it asks as Close space does (our confirm, not Herdr's).
-export function closeTab(tabId) {
+function keepInTabs(ids) {
+  const ps = panes().filter((p) => ids.includes(p.tab));
+  return terminals().filter((k) => keepsWork(k) && ps.some((p) => p.terminal === k.address || p.pane === chatPane(k)))
+    .map((k) => ({ address: k.address, attached: ps.some((p) => p.terminal === k.address) }));
+}
+
+export async function closeTab(tabId) {
   const c = coordinatorIn(tabId);
   if (c && workersOf(c).length) {
     openOverlay({ mod: "coordinator", kind: "dialog", width: 440, height: 336, props: { view: "close", tab: tabId } });
@@ -489,7 +494,10 @@ export function closeTab(tabId) {
   }
   const space = allSpaces().find((s) => s.tabs.some((x) => x.id === tabId));
   if (space?.tabs.length === 1) return closeSpace(space.id);
-  run("tab.close", { id: tabId });
+  try {
+    await keepWork(keepInTabs([tabId]));
+    run("tab.close", { id: tabId });
+  } catch (e) { toast({ title: "Tab stayed open", body: plainError(e), level: "error" }); }
 }
 
 // Rename a tab: our prompt (mods/prompt-chat, the app's one dialog footer), its field holding the
@@ -505,10 +513,12 @@ export function renameSpace(id) {
   openOverlay({ mod: "spaces-chat", kind: "dialog", frame: "none", width: 380, height: 172, props: { view: "rename", space: id } });
 }
 export function closeSpace(id) {
-  const name = allSpaces().find((s) => s.id === id)?.name;
+  const space = allSpaces().find((s) => s.id === id);
+  const name = space?.name;
   openOverlay({ mod: "confirm-chat", kind: "dialog", width: 400, height: 168, props: {
     title: name && name !== "~" ? `Close \u201c${name}\u201d?` : "Close this space?",
-    detail: "Its tabs close and every program in them ends.", verb: "Close space",
+    detail: "The Assistant and tasks keep running. Reopen this folder to return to them. Other terminal programs end.", verb: "Close space",
+    keep: keepInTabs((space?.tabs ?? []).map((t) => t.id)),
     command: { name: "space.close", args: { id, confirmed: true } } } });
   logSpace("close", id, "coordinator.js closeSpace (asks in confirm-chat)");
 }

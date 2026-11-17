@@ -7,7 +7,8 @@
 import { View, div } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { run, props, closeOverlay, theme } from "herdr";
-import { dialogFooter, TEXT } from "./ui.js";
+import { keepWork } from "./keep-work.js";
+import { dialogFooter, TEXT, toast } from "./ui.js";
 
 export default class Confirm extends View {
   init(_props, cx) {
@@ -15,10 +16,18 @@ export default class Confirm extends View {
     this.handle.focus();
   }
 
-  yes() {
+  async yes() {
+    if (this.closing) return;
+    this.closing = true;
     const p = props();
-    closeOverlay(p.overlay);
-    run(p.command.name, p.command.args ?? {});
+    try {
+      await keepWork(p.keep ?? []);
+      closeOverlay(p.overlay);
+      run(p.command.name, p.command.args ?? {});
+    } catch (e) {
+      this.closing = false;
+      toast({ title: "View stayed open", body: String(e?.message ?? e), level: "error" });
+    }
   }
 
   render() {

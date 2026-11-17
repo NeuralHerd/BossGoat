@@ -101,6 +101,11 @@ def evidence(s, t):
     list} or None, git (False: not a git folder), scope, checks, proof, artifacts (its others)}."""
     main, out = s.loc["folder"], {"summary": t.get("summary"), "details": t.get("details"), "proof": t.get("proof") or find_proof(s, t)}
     out["artifacts"] = task_artifacts(s, t, out["proof"])
+    if t.get("research"):
+        from .research import report_text
+        out.update(details=report_text(t), git=s.loc["kind"] == "repo", commits={"count": 0, "list": []},
+                   diff=None, checks={"state": "none", "text": "Read-only research"}, research=True)
+        return out
     commits, files = [], {}
     fmt = "--format=%h%x09%s"
     if s.loc["kind"] != "repo":

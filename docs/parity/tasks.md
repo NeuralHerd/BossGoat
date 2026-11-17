@@ -171,3 +171,12 @@ The window's Browser is `mods/task-browser` (B) running `bin/herdr-browser-view`
 | Another machine's task | B:79 "This task runs on vm. Its browser can be watched only from that machine's Herdr for now." | compat `browser.hint` | ✓ fixed |
 | Notes on the page, pins, Notes panel, sending notes, shots; address field; Forward; Fit; Take over; "Agent is driving" bar | (none) | removed | ✓ fixed |
 | Keyboard button | (a physical keyboard) | BR "Keyboard" on a phone or tablet | ◇ a phone has no keyboard of its own: it brings up the on-screen one, whose keys the page gets |
+
+
+## Research tasks
+
+`herdr-task add "Question" --research --skill <skill-id>` creates a software research task. For non-software research, use `--kind non-software` instead of a skill. Research uses the current folder read-only, with no worktree, code review or pull request. The task starts with a saved question outside the repository.
+
+Workers update the durable report with `herdr-task checkpoint <id> --findings "..." --sources "..." --open-questions "..." --next-steps "..."`. Each supplied field replaces its section; omitted sections remain. Saving is atomic and serialized with task updates. `show --json` returns `research_report`; `show --evidence` includes the report in Details for both Accept cards. Ready requires findings and sources. Follow-ups reuse the task through reopen/resume, and restarted workers are directed to the saved report.
+
+Closing a space or an Assistant/task chat preserves its work. Native terminal views are parked before closure; the web service also preserves task workers and Assistants. Reopening the same folder reconnects one unambiguous detached Assistant on that machine. A stopped agent can still resume through its saved task. Explicit End agent and Stop Assistant and workers remain available. Quick facts stay in Assistant; multi-step research is delegated with a short brief and returns a summary and report link.

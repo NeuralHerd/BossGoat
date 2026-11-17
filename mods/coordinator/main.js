@@ -29,7 +29,7 @@ export default class Coordinator extends View {
   init(_props, cx) {
     const view = props()?.view;
     if (view === "close") {
-      this.stop = true;
+      this.stop = false;
       this.handle = cx.focus_handle();
       this.handle.focus();
     } else if (view === "agents") {
@@ -199,8 +199,8 @@ export default class Coordinator extends View {
         ? `It has ${n} worker${n > 1 ? "s" : ""} running. Their branches and worktrees stay either way.`
         : "It has no workers running."))
       .when(n > 0, (el) => el
-        .child(choice("stop", true, "Stop its workers", "Ends the agents it started and closes their tabs."))
-        .child(choice("keep", false, "Let them finish", "Workers keep running in their own tabs, on their own.")))
+        .child(choice("stop", true, "Stop Assistant and workers", "Ends the Assistant and the agents it started. Saved tasks remain."))
+        .child(choice("keep", false, "Keep working", "The Assistant and workers keep running. Reopen the folder to return.")))
       .child(div().flex_1())
       .child(dialogFooter({ onCancel: () => closeOverlay(p.overlay), primary: { id: "confirm", label: "Close Assistant", onClick: confirm } }));
   }

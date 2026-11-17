@@ -506,13 +506,27 @@ async function actInner(hub: Hub, b: any, compat: Compat): Promise<unknown> {
   }
   if (b?.type === "space-remove" && typeof b.place === "string" && compat.shared) {
     // Close a space: the window closes its own (herdr-app do space.close), or with no window the service closes it in
-    // the window's saved spaces (service/saved-spaces.ts); the service forgets one of its own and ends its Assistant
+    // the window's saved spaces (service/saved-spaces.ts); the service forgets one of its own and preserves its Assistant
     const own = Array.isArray(compat.shared.value("spaces")) ? compat.shared.value("spaces") : [];
     const mine = own.find((x: any) => (x.machine ? `${x.machine}/${x.id}` : x.id) === b.place);
     if (mine) {
       await compat.shared.set("spaces", own.filter((x: any) => x !== mine));
-      for (const t of hub.terminals.values()) if (t.labels?.["herdr.coordinator.space"] === mine.id && (t.address.includes("/") ? t.address.split("/")[0] : null) === (mine.machine ?? null)) await hc(["kill", t.address]);
       return { ok: true };
+    }
+    const closing = compat.spaceOf?.(b.place);
+    if (closing && (await run(["herdr-app", "status"])).code === 0) {
+      const { machine, id } = splitId(b.place);
+      for (const t of hub.terminals.values()) {
+        if (!SP.keepsWork(t) || SP.machineOf(t.address) !== machine) continue;
+        const l = t.labels ?? {};
+        if (l["herdr.coordinator.space"] !== id && l["herdr.task.space"] !== id && l["herdr.space"] !== id) continue;
+        if (l["herdr.tab"]) {
+          const parked = await run(["herdr-app", "do", "terminal.park", "--terminal", t.address]);
+          if (parked.code !== 0) throw new Error("Couldn't preserve the running agent; the space stayed open.");
+        }
+        const kept = await hc(["keep", t.address]);
+        if (kept.code !== 0) throw new Error("Couldn't keep the running agent; the space stayed open.");
+      }
     }
     const r = await run(["herdr-app", "do", "space.close", "--id", b.place, "--confirmed", "true"]);
     if (r.code !== 0) {

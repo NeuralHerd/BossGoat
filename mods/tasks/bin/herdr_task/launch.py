@@ -19,6 +19,8 @@ from .base import ASK_HOME, ENTRY, Fail, git, hc_json, now, run, WORKTREES
 from .settings import agent_key, inherit_permission, ASSISTANT_TEMPLATES, trust_roots, bare, BRANCH_PATTERN, branch_pattern_problem, keep_review, notes, notes_part, review_limits, settings_block, settings_for, task_settings
 from .templates import instructions, worker_sections
 from .holycow import skill_note, require_assignment
+from .settings import research_argv
+from . import research
 from .agents import detail, LINE_MAX, live_agents, SUMMARY_MAX
 from .github import finish, remote_of
 from .browsers import browser_line, browser_path
@@ -32,7 +34,7 @@ from .browsers import browser_line, browser_path
 
 # How long Codex waits on the permission hook: as the chat's card waits (ask-hook.sh).
 ASK_TIMEOUT = 1800
-OWN = ["ready", "reviewed", "status", "alert", "feedback", "show", "list", "where"]
+OWN = ["ready", "checkpoint", "reviewed", "status", "alert", "feedback", "show", "list", "where"]
 # herdr-secret's agent commands (~/.config/herdr-app/bin/herdr-secret): asking for a secret and
 # using one by name never ask either, as Shepherdr's secret commands. Written by its full path or
 # its bare name. Reviewers get none (launch() skips own_argv for them; herdr-secret refuses them).
@@ -58,11 +60,13 @@ def own_path():
     return found if found and os.path.realpath(found) == me else me
 
 
-def own_rules(path):
+def own_rules(path, research=False):
     """Claude's allow rules for this exact path; a path a rule can't state literally gets none."""
     if not re.fullmatch(r"[\w@%+=:,./-]+", path):
         return []
     rules = [f"Bash({path} {verb}:*)" for verb in OWN]
+    if research:
+        return rules
     sp = secret_path()
     for p in [sp, "herdr-secret"] if sp and re.fullmatch(r"[\w@%+=:,./-]+", sp) else []:
         rules += [f"Bash({p} {verb}:*)" for verb in SECRET]
@@ -73,11 +77,11 @@ def own_rules(path):
     return rules
 
 
-def ask_command(path, sandboxed=False):
+def ask_command(path, sandboxed=False, research=False):
     """The PermissionRequest hook every task worker gets at launch (`herdr-task _allow`): its own
     commands allowed, anything else (a permission, its question tool, a plan) on the chat's card.
     sandboxed (Codex's): its proof and commits also run escalated, so they're its own too (#866)."""
-    return f"{shlex.quote(sys.executable)} {shlex.quote(ENTRY)} _allow --command {shlex.quote(path)}" + (" --sandboxed" if sandboxed else "")
+    return f"{shlex.quote(sys.executable)} {shlex.quote(ENTRY)} _allow --command {shlex.quote(path)}" + (" --sandboxed" if sandboxed else "") + (" --research" if research else "")
 
 
 def artifact_path():
@@ -85,7 +89,7 @@ def artifact_path():
     return shutil.which("herdr-artifact")
 
 
-def own_argv(argv, folder=None):
+def own_argv(argv, folder=None, research=False):
     """An agent's argv with its own herdr-task commands allowed and its asks on the chat's card
     (Claude Code and Codex). SHEP-139: a Claude worker gets the card's hook in its --settings too,
     so a machine whose ~/.claude/settings.json lacks Shepherdr's hook (one that only runs tasks)
@@ -93,8 +97,8 @@ def own_argv(argv, folder=None):
     path, out = own_path(), list(argv)
     k = agent_key(out)
     if k == "claude":
-        rules = own_rules(path)
-        hook = {"hooks": [{"type": "command", "command": ask_command(path), "timeout": ASK_TIMEOUT}]}
+        rules = own_rules(path, research)
+        hook = {"hooks": [{"type": "command", "command": ask_command(path, research=research), "timeout": ASK_TIMEOUT}]}
         cur, i = {}, None
         if "--settings" in out[:-1]:
             i = out.index("--settings")
@@ -126,7 +130,7 @@ def own_argv(argv, folder=None):
             return out
         return out[:1] + ["--settings", json.dumps(merged)] + out[1:]
     if k == "codex":
-        hook = ask_command(path, sandboxed=True)
+        hook = ask_command(path, sandboxed=True, research=research)
         # Codex runs a new hook only once trusted. This one hook's trust comes with it, for this
         # launch only: Codex's own key and hash for a -c hook (codex-rs/hooks discovery.rs
         # hook_hash, config fingerprint.rs version_for_toml), so no other hook is trusted by it.
@@ -147,7 +151,7 @@ WORD = re.compile(r"""(?:[\w@%+=:,./-]+|'[^']*'|"(?:[^"\\$`]|\\["\\])*")+""")
 UNQUOTE = re.compile(r"""'([^']*)'|"((?:[^"\\]|\\.)*)\"""")
 
 
-def own_command(path, text, sandboxed=False):
+def own_command(path, text, sandboxed=False, research=False):
     """Whether a shell command is exactly one of this herdr-task's own verbs: one simple command,
     nothing that expands, redirects or chains (as Shepherdr's ownCommand). sandboxed (a Codex
     worker's): herdr-artifact's proof verbs and git add/commit too."""
@@ -169,6 +173,8 @@ def own_command(path, text, sandboxed=False):
         at = m.end()
     if len(words) >= 2 and words[0] == path and words[1] in OWN:
         return True
+    if research:
+        return False
     bp = browser_path()
     if bp and len(words) >= 2 and words[0] in (bp, "herdr-browser"):
         return True
@@ -271,7 +277,7 @@ def cmd_allow(args):
     if isinstance(cmd, list):
         # ["bash", "-lc", "<command>"] as some tools pass it.
         cmd = cmd[2] if len(cmd) == 3 and cmd[1] in ("-c", "-lc") else shlex.join(cmd)
-    if own_command(args.command, cmd, getattr(args, "sandboxed", False)):
+    if own_command(args.command, cmd, getattr(args, "sandboxed", False), getattr(args, "research", False)):
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}))
         return
     out = ask_card(raw)
@@ -476,7 +482,9 @@ def closing_line(s, task, parent=None, argv=None):
     else:
         text += f"The {', '.join(OWN)} commands run without asking when written this way."
     text += browser_line()
-    if argv and agent_key(argv) == "codex":
+    if task.get("research"):
+        text += " Research stays read-only; only checkpoint and task-status commands save outside the repository. Give those commands require_escalated when the sandbox requires it."
+    elif argv and agent_key(argv) == "codex":
         text += (" Codex's sandbox can't reach Herdr nor write git's data, so give those commands, herdr-artifact's (your proof), "
                  "`git add`/`git commit` and your review's `hc run`/`hc wait`/`hc read`/`hc kill` (its prompt in single quotes) "
                  "sandbox_permissions \"require_escalated\" from the first try, each as one plain command (no && chains, no $(…), "
@@ -485,6 +493,8 @@ def closing_line(s, task, parent=None, argv=None):
 
 
 def worker_instructions(s, task, space=None, argv=None):
+    if task.get("research"):
+        return research.instructions(s, task, own_path(), shlex.quote(s.loc["folder"]))
     from .feedback import feedback_on
     rows = {r["label"]: r["value"] for r in task_settings(s, task, space, argv)}
     folder = task.get("worktree") or s.loc["folder"]
@@ -522,11 +532,11 @@ def holycow_brief(s, task, space=None, argv=None):
 def brief(s, task, parent=None, space=None, argv=None):
     instructions("reviewer")  # the file its review's reviewer gets (WORKER_MD)
     keep_review(s, task, space)
-    start = notes_part("Before you start", notes(s, task, "start", space))
+    start = "" if task.get("research") else notes_part("Before you start", notes(s, task, "start", space))
     if start and task.get("worktree"):
         start += f"\n(The main folder is {s.loc['folder']}.)"
     body = "Your task, " + s.ref(task) + ":\n" + ((task.get("prompt") or "").strip() or task["title"])
-    finish = notes_part("Before you say ready", notes(s, task, "finish", space))
+    finish = "" if task.get("research") else notes_part("Before you say ready", notes(s, task, "finish", space))
     return "\n\n".join(x for x in [worker_instructions(s, task, space, argv), holycow_brief(s, task, space, argv), start, body, where_line(task), finish, closing_line(s, task, parent, argv),
                                     settings_block(s, task, space, argv)] if x)
 
@@ -540,8 +550,9 @@ def handoff(s, task, prev, parent=None, argv=None):
         lines.append(f"The previous agent ({prev.get('agent') or 'agent'}) kept its session log at {prev['log']}: read the recent part to pick up where it left off.")
     elif prev:
         lines.append(f"The previous agent ({prev.get('agent') or 'agent'}) left no session log; check the folder's state (git status, git log) before you continue.")
-    lines.append(notes_part("Before you continue, if it isn't done yet", notes(s, task, "start")))
-    lines.append(notes_part("Before you say ready", notes(s, task, "finish")))
+    if not task.get("research"):
+        lines.append(notes_part("Before you continue, if it isn't done yet", notes(s, task, "start")))
+        lines.append(notes_part("Before you say ready", notes(s, task, "finish")))
     lines.append(closing_line(s, task, parent, argv))
     lines.append(settings_block(s, task, None, argv))
     return "\n\n".join(x for x in lines if x)
@@ -668,7 +679,7 @@ def branch_for(s, task):
 
 
 def folder_for(s, task):
-    if task.get("mode") != "worktree":
+    if task.get("research") or task.get("mode") != "worktree":
         return s.loc["folder"]
     if task.get("worktree") and os.path.isdir(task["worktree"]):
         return task["worktree"]
@@ -707,13 +718,18 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     herdr.space, which Herdr gives a pane), herdr.agent, herdr.coordinator (its coordinator's tab,
     which keeps it under a restarted coordinator) and herdr.role=reviewer for a reviewer, kept
     apart from the task's agents. Returns its record."""
+    argv = research_argv(task, argv)
+    if resume:
+        resume = research_argv(task, resume)
+        if task.get("research"):
+            message = worker_instructions(s, task, space, argv) + ("\n\n" + message if message else "")
     skill_instructions = holycow_brief(s, task, space, argv)
     if resume and skill_instructions:
         message = skill_instructions + ("\n\n" + message if message else "")
     key = s.key(task)
     cmd = list(resume or argv)
     if not role:
-        cmd = own_argv(cmd, folder_for(s, task))
+        cmd = own_argv(cmd, folder_for(s, task), **({"research": True} if task.get("research") else {}))
     if message:
         cmd = cmd + [message]
     labels = ["--label", f"herdr.task={key}", "--label", f"herdr.task.space={bare(space)}",
@@ -775,12 +791,17 @@ def coordinator_in(space):
     """The space's live coordinator on this machine, or None."""
     if not space:
         return None
+    recovered = None
     for addr in coordinators():
         k = hc_json("get", addr) or {}
         labels = k.get("labels") or {}
-        if k.get("state") == "live" and bare(space) in (labels.get("herdr.space"), labels.get("herdr.coordinator.space")):
+        if k.get("state") != "live":
+            continue
+        if bare(space) in (labels.get("herdr.space"), labels.get("herdr.coordinator.space")):
             return addr
-    return None
+        if bare(space) in (labels.get("herdr.coordinator.previous") or "").split(","):
+            recovered = recovered or addr
+    return recovered
 
 
 def parent_for(parent, space):
@@ -822,14 +843,17 @@ def launch_preview(s, task, **choices):
         return {"ready": False, "rows": rows, "problems": [problem]}
     plan = start_choices(s, task, **choices)
     argv, parent = effective_launch(**plan)
+    argv = research_argv(task, argv)
     agent = agent_key(argv)
+    if task.get("research"):
+        rows.append({"label": "Task mode", "text": "Research · saved checkpoints · no worktree"})
     model, effort = argv_model(argv)
     mode = permission_mode(argv)
     rows.extend([{"label": "Agent", "text": agent}, {"label": "Model", "text": model or "CLI default"},
                  {"label": "Permissions", "text": {"ask": "Ask me", "approve": "Approve for me", "full": "Full access", "read-only": "Read-only"}.get(mode, "CLI default or custom") }])
     if effort:
         rows.append({"label": "Effort", "text": effort})
-    if parent and argv != plan["argv"]:
+    if parent and argv != plan["argv"] and not task.get("research"):
         rows.append({"label": "Permission source", "text": "Inherited from this space's Assistant"})
     folder = task.get("worktree") or s.loc["folder"]
     required = [(skill, agent)] if skill else []
